@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/widgets/app_top_bar.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -40,7 +41,7 @@ class HomePage extends StatelessWidget {
     final desktop = MediaQuery.of(context).size.width > 700;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Depósito de Água'), centerTitle: true),
+      appBar: const AppTopBar(titulo: 'Depósito de Água'),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: GridView.count(

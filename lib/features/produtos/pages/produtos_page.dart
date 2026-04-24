@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/produto_model.dart';
 import '../repositories/produto_repository.dart';
 import '../widgets/produto_form_dialog.dart';
+import '../../../core/widgets/app_top_bar.dart';
 
 enum TipoOrdenacao { codigo, descricao, estoque, venda }
 
@@ -223,7 +224,7 @@ class _ProdutosPageState extends State<ProdutosPage> {
     final desktop = largura > 700;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Produtos')),
+      appBar: const AppTopBar(titulo: 'Produtos'),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

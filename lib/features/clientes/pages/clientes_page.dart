@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/cliente_model.dart';
 import '../repositories/cliente_repository.dart';
 import '../widgets/cliente_form_dialog.dart';
+import '../../../core/widgets/app_top_bar.dart';
 
 class ClientesPage extends StatefulWidget {
   const ClientesPage({super.key});
@@ -39,6 +40,45 @@ class _ClientesPageState extends State<ClientesPage> {
     }
   }
 
+  String formatarTelefone(String valor) {
+    final numeros = valor.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (numeros.length == 10) {
+      return '(${numeros.substring(0, 2)}) '
+          '${numeros.substring(2, 6)}-'
+          '${numeros.substring(6)}';
+    }
+
+    if (numeros.length == 11) {
+      return '(${numeros.substring(0, 2)}) '
+          '${numeros.substring(2, 7)}-'
+          '${numeros.substring(7)}';
+    }
+
+    return valor;
+  }
+
+  String formatarCpfCnpj(String valor) {
+    final numeros = valor.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (numeros.length == 11) {
+      return '${numeros.substring(0, 3)}.'
+          '${numeros.substring(3, 6)}.'
+          '${numeros.substring(6, 9)}-'
+          '${numeros.substring(9)}';
+    }
+
+    if (numeros.length == 14) {
+      return '${numeros.substring(0, 2)}.'
+          '${numeros.substring(2, 5)}.'
+          '${numeros.substring(5, 8)}/'
+          '${numeros.substring(8, 12)}-'
+          '${numeros.substring(12)}';
+    }
+
+    return valor;
+  }
+
   String norm(String t) {
     const a = 'áàãâäéèêëíìîïóòõôöúùûüçÁÀÃÂÄÉÈÊËÍÌÎÏÓÒÕÔÖÚÙÛÜÇ';
     const b = 'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC';
@@ -60,9 +100,19 @@ class _ClientesPageState extends State<ClientesPage> {
     return lista.where((c) {
       final nome = norm(c.nome);
 
-      final tel = norm(c.telefone);
+      final telefone = norm(c.telefone);
 
-      return nome.contains(texto) || tel.contains(texto);
+      final endereco = norm(c.endereco);
+
+      final referencia = norm(c.referencia);
+
+      final cpf = norm(c.cpfCnpj);
+
+      return nome.contains(texto) ||
+          telefone.contains(texto) ||
+          endereco.contains(texto) ||
+          referencia.contains(texto) ||
+          cpf.contains(texto);
     }).toList();
   }
 
@@ -74,16 +124,20 @@ class _ClientesPageState extends State<ClientesPage> {
         child: DataTable(
           columns: const [
             DataColumn(label: Text('Nome')),
+            DataColumn(label: Text('CPF/CNPJ')),
             DataColumn(label: Text('Telefone')),
             DataColumn(label: Text('Endereço')),
+            DataColumn(label: Text('Referência')),
             DataColumn(label: Text('Ações')),
           ],
           rows: lista.map((c) {
             return DataRow(
               cells: [
                 DataCell(Text(c.nome)),
-                DataCell(Text(c.telefone)),
+                DataCell(Text(formatarCpfCnpj(c.cpfCnpj))),
+                DataCell(Text(formatarTelefone(c.telefone))),
                 DataCell(Text(c.endereco)),
+                DataCell(Text(c.referencia)),
                 DataCell(
                   IconButton(
                     icon: const Icon(Icons.edit),
@@ -105,9 +159,27 @@ class _ClientesPageState extends State<ClientesPage> {
         final c = lista[i];
 
         return Card(
+          margin: const EdgeInsets.only(bottom: 10),
           child: ListTile(
-            title: Text(c.nome),
-            subtitle: Text('${c.telefone}\n${c.endereco}'),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 8,
+            ),
+
+            title: Text(
+              c.nome,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '${formatarTelefone(c.telefone)}\n'
+                '${formatarCpfCnpj(c.cpfCnpj)}\n'
+                '${c.endereco}',
+              ),
+            ),
+
             trailing: IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () => editar(c),
@@ -123,7 +195,7 @@ class _ClientesPageState extends State<ClientesPage> {
     final desktop = MediaQuery.of(context).size.width > 700;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Clientes')),
+      appBar: const AppTopBar(titulo: 'Clientes'),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -136,7 +208,8 @@ class _ClientesPageState extends State<ClientesPage> {
                 });
               },
               decoration: InputDecoration(
-                hintText: 'Buscar cliente...',
+                hintText:
+                    'Buscar por nome, telefone, CPF, endereço ou referência...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),

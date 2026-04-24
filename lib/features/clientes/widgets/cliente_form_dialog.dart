@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/cliente_model.dart';
 import '../repositories/cliente_repository.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
+import 'package:flutter/services.dart';
 
 class ClienteFormDialog extends StatefulWidget {
   final Cliente? cliente;
@@ -26,6 +28,10 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
 
   final cpfCnpj = TextEditingController();
 
+  final telefoneMask = MaskTextInputFormatter(
+    mask: '(##) #####-####',
+    filter: {"#": RegExp(r'[0-9]')},
+  );
   bool loading = false;
 
   @override
@@ -42,6 +48,16 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
       referencia.text = widget.cliente!.referencia;
 
       cpfCnpj.text = widget.cliente!.cpfCnpj;
+    }
+  }
+
+  void atualizarMascaraTelefone(String valor) {
+    final numeros = valor.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (numeros.length <= 10) {
+      telefoneMask.updateMask(mask: '(##) ####-####');
+    } else {
+      telefoneMask.updateMask(mask: '(##) #####-####');
     }
   }
 
@@ -100,6 +116,8 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
     required TextEditingController controller,
     String? Function(String?)? validator,
     TextInputType? tipo,
+    List<TextInputFormatter>? inputFormatters,
+    void Function(String)? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -107,6 +125,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
         controller: controller,
         validator: validator,
         keyboardType: tipo,
+        inputFormatters: inputFormatters,
         decoration: deco(label),
       ),
     );
@@ -139,6 +158,8 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
                   label: 'Telefone',
                   controller: telefone,
                   tipo: TextInputType.phone,
+                  inputFormatters: [telefoneMask],
+                  onChanged: atualizarMascaraTelefone,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) {
                       return 'Informe o telefone';
