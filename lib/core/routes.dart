@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 import '../features/home/pages/home_page.dart';
 import '../features/clientes/pages/clientes_page.dart';
 import '../features/produtos/pages/produtos_page.dart';
+import '../features/vendas/pages/vendas_page.dart';
 
 final router = GoRouter(
   routes: [
@@ -14,5 +15,6 @@ final router = GoRouter(
       path: '/produtos',
       builder: (context, state) => const ProdutosPage(),
     ),
+    GoRoute(path: '/vendas', builder: (context, state) => const VendasPage()),
   ],
 );
