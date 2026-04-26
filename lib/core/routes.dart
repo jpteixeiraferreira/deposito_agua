@@ -3,6 +3,7 @@ import '../features/home/pages/home_page.dart';
 import '../features/clientes/pages/clientes_page.dart';
 import '../features/produtos/pages/produtos_page.dart';
 import '../features/vendas/pages/vendas_page.dart';
+import '../features/relatorios/pages/relatorios_page.dart';
 
 final router = GoRouter(
   routes: [
@@ -16,5 +17,9 @@ final router = GoRouter(
       builder: (context, state) => const ProdutosPage(),
     ),
     GoRoute(path: '/vendas', builder: (context, state) => const VendasPage()),
+    GoRoute(
+      path: '/relatorios',
+      builder: (context, state) => const RelatoriosPage(),
+    ),
   ],
 );
