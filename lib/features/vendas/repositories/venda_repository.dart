@@ -67,4 +67,16 @@ class VendaRepository {
       'quantidade': quantidade,
     });
   }
+
+  Future<void> inserirPagamento({
+    required String vendaId,
+    required String tipo,
+    required double valor,
+  }) async {
+    await supabase.from('pagamentos').insert({
+      'venda_id': vendaId,
+      'tipo': tipo,
+      'valor': valor,
+    });
+  }
 }

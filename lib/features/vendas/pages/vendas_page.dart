@@ -30,6 +30,12 @@ class _VendasPageState extends State<VendasPage> {
 
   final produtoScrollController = ScrollController();
 
+  final valorPagamentoController = TextEditingController();
+
+  String tipoPagamento = 'dinheiro';
+
+  final List<Map<String, dynamic>> pagamentos = [];
+
   List<Cliente> clientes = [];
   List<Produto> produtos = [];
 
@@ -64,7 +70,7 @@ class _VendasPageState extends State<VendasPage> {
     qtdFocus.dispose();
 
     produtoScrollController.dispose();
-
+    valorPagamentoController.dispose();
     super.dispose();
   }
 
@@ -94,6 +100,19 @@ class _VendasPageState extends State<VendasPage> {
 
   String apenasNumeros(String texto) {
     return texto.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  int paraCentavos(double valor) {
+    return (valor * 100).round();
+  }
+
+  double deCentavos(int centavos) {
+    return centavos / 100;
+  }
+
+  double parseMoeda(String valor) {
+    final limpo = valor.trim().replaceAll('.', '').replaceAll(',', '.');
+    return double.tryParse(limpo) ?? 0;
   }
 
   String moeda(double valor) {
@@ -244,6 +263,95 @@ class _VendasPageState extends State<VendasPage> {
     produtoFocus.requestFocus();
   }
 
+  int get totalCentavos {
+    return paraCentavos(total);
+  }
+
+  int get totalPagoCentavos {
+    return pagamentos.fold<int>(
+      0,
+      (soma, p) => soma + paraCentavos((p['valor'] as num).toDouble()),
+    );
+  }
+
+  int get totalDinheiroCentavos {
+    return pagamentos
+        .where((p) => p['tipo'] == 'dinheiro')
+        .fold<int>(
+          0,
+          (soma, p) => soma + paraCentavos((p['valor'] as num).toDouble()),
+        );
+  }
+
+  int get totalSemDinheiroCentavos {
+    return pagamentos
+        .where((p) => p['tipo'] != 'dinheiro')
+        .fold<int>(
+          0,
+          (soma, p) => soma + paraCentavos((p['valor'] as num).toDouble()),
+        );
+  }
+
+  double get totalPago {
+    return deCentavos(totalPagoCentavos);
+  }
+
+  double get faltaPagar {
+    final falta = totalCentavos - totalPagoCentavos;
+    return deCentavos(falta > 0 ? falta : 0);
+  }
+
+  double get troco {
+    final restanteDepoisNaoDinheiro = totalCentavos - totalSemDinheiroCentavos;
+
+    final trocoCentavos = totalDinheiroCentavos - restanteDepoisNaoDinheiro;
+
+    return deCentavos(trocoCentavos > 0 ? trocoCentavos : 0);
+  }
+
+  void adicionarPagamento() {
+    final valor = parseMoeda(valorPagamentoController.text);
+
+    final valorCentavos = paraCentavos(valor);
+
+    if (valorCentavos <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe um valor de pagamento válido')),
+      );
+      return;
+    }
+
+    final novoTotalPagoCentavos = totalPagoCentavos + valorCentavos;
+
+    if (tipoPagamento != 'dinheiro' && novoTotalPagoCentavos > totalCentavos) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pix/cartão não pode ultrapassar o total da venda'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      pagamentos.add({
+        'tipo': tipoPagamento,
+        'valor': deCentavos(valorCentavos),
+      });
+
+      valorPagamentoController.clear();
+    });
+  }
+
+  void sugerirPagamentoRestante() {
+    final restante = faltaPagar;
+
+    if (restante <= 0) return;
+
+    valorPagamentoController.text = restante
+        .toStringAsFixed(2)
+        .replaceAll('.', ',');
+  }
+
   Future<void> finalizarVenda() async {
     if (clienteSelecionado == null) {
       ScaffoldMessenger.of(
@@ -260,7 +368,19 @@ class _VendasPageState extends State<VendasPage> {
       produtoFocus.requestFocus();
       return;
     }
+    if (pagamentos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adicione pelo menos um pagamento')),
+      );
+      return;
+    }
 
+    if (totalPago < total) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ainda falta pagar ${moeda(faltaPagar)}')),
+      );
+      return;
+    }
     try {
       setState(() => salvando = true);
 
@@ -283,7 +403,13 @@ class _VendasPageState extends State<VendasPage> {
           estoqueAtual: (item['estoque'] as num).toDouble(),
         );
       }
-
+      for (final pagamento in pagamentos) {
+        await vendaRepo.inserirPagamento(
+          vendaId: vendaId,
+          tipo: pagamento['tipo'],
+          valor: (pagamento['valor'] as num).toDouble(),
+        );
+      }
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -298,6 +424,9 @@ class _VendasPageState extends State<VendasPage> {
         produtoBuscaController.clear();
 
         qtdController.text = '1';
+        pagamentos.clear();
+        valorPagamentoController.clear();
+        tipoPagamento = 'dinheiro';
         itens.clear();
       });
 
@@ -565,6 +694,153 @@ class _VendasPageState extends State<VendasPage> {
     );
   }
 
+  Widget areaPagamentos() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Pagamento',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                SizedBox(
+                  width: 160,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: tipoPagamento,
+                    decoration: const InputDecoration(
+                      labelText: 'Forma',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'dinheiro',
+                        child: Text('Dinheiro'),
+                      ),
+                      DropdownMenuItem(value: 'pix', child: Text('Pix')),
+                      DropdownMenuItem(value: 'debito', child: Text('Débito')),
+                      DropdownMenuItem(
+                        value: 'credito',
+                        child: Text('Crédito'),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+
+                      setState(() {
+                        tipoPagamento = v;
+                      });
+                    },
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                Expanded(
+                  child: TextField(
+                    controller: valorPagamentoController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Valor',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => adicionarPagamento(),
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                SizedBox(
+                  height: 56,
+                  child: OutlinedButton(
+                    onPressed: sugerirPagamentoRestante,
+                    child: const Text('Restante'),
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                SizedBox(
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    onPressed: adicionarPagamento,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Adicionar'),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            if (pagamentos.isEmpty) const Text('Nenhum pagamento adicionado'),
+
+            if (pagamentos.isNotEmpty)
+              Column(
+                children: pagamentos.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final pagamento = entry.value;
+
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(pagamento['tipo'].toString().toUpperCase()),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(moeda((pagamento['valor'] as num).toDouble())),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            setState(() {
+                              pagamentos.removeAt(index);
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+
+            const Divider(),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [const Text('Pago:'), Text(moeda(totalPago))],
+            ),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [const Text('Falta:'), Text(moeda(faltaPagar))],
+            ),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Troco:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  moeda(troco),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (loading) {
@@ -624,6 +900,8 @@ class _VendasPageState extends State<VendasPage> {
               ),
               const SizedBox(height: 16),
               Flexible(child: listaItens()),
+              const SizedBox(height: 12),
+              areaPagamentos(),
               const SizedBox(height: 12),
               Card(
                 color: Colors.blue.shade50,

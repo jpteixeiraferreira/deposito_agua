@@ -35,7 +35,7 @@ class ProdutoRepository {
     final produtoId = response['id'];
 
     if (estoqueInicial > 0) {
-      await supabase.from('estoque_movimentacoes').insert({
+      await supabase.from('movimentacoes_estoque').insert({
         'produto_id': produtoId,
         'tipo': 'entrada',
         'quantidade': estoqueInicial,
