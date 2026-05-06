@@ -162,15 +162,15 @@ class _VendasPageState extends State<VendasPage> {
 
   void rolarListaProdutos() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!produtoScrollController.hasClients) return;
+      if (!mounted || !produtoScrollController.hasClients) return;
 
       const itemHeight = 64.0;
+
       final destino = produtoIndexSelecionado * itemHeight;
       final max = produtoScrollController.position.maxScrollExtent;
 
       produtoScrollController.animateTo(
-        destino > max ? max : destino,
+        destino.clamp(0, max),
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
       );
@@ -544,6 +544,8 @@ class _VendasPageState extends State<VendasPage> {
 
   Widget campoProduto() {
     final resultados = filtrarProdutos(produtoBuscaController.text);
+    final alturaTela = MediaQuery.of(context).size.height;
+    final alturaListaProdutos = (alturaTela * 0.35).clamp(180.0, 360.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -626,13 +628,15 @@ class _VendasPageState extends State<VendasPage> {
         if (resultados.isNotEmpty)
           Material(
             color: Colors.white,
+            elevation: 4,
             borderRadius: BorderRadius.circular(8),
             clipBehavior: Clip.hardEdge,
-            child: SizedBox(
-              height: 140,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: alturaListaProdutos),
               child: ListView.builder(
                 controller: produtoScrollController,
                 itemExtent: 64,
+                shrinkWrap: true,
                 itemCount: resultados.length,
                 itemBuilder: (context, index) {
                   final p = resultados[index];
@@ -641,9 +645,15 @@ class _VendasPageState extends State<VendasPage> {
                   return ListTile(
                     selected: selecionado,
                     selectedTileColor: Colors.blue.shade50,
-                    title: Text('${p.codigo} - ${p.descricao}'),
+                    title: Text(
+                      '${p.codigo} - ${p.descricao}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     subtitle: Text(
                       'Estoque: ${p.estoqueAtual.toStringAsFixed(0)} • ${moeda(p.precoVenda)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     onTap: () => selecionarProduto(p),
                   );
@@ -853,97 +863,155 @@ class _VendasPageState extends State<VendasPage> {
     return Scaffold(
       appBar: const AppTopBar(titulo: 'Vendas'),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Card(
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      campoCliente(),
-                      const SizedBox(height: 12),
-                      Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Card(
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: LayoutBuilder(
+                        builder: (context, c) {
+                          final telaEstreita = c.maxWidth < 700;
+
+                          return Column(
+                            children: [
+                              campoCliente(),
+                              const SizedBox(height: 12),
+
+                              if (telaEstreita)
+                                Column(
+                                  children: [
+                                    campoProduto(),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      controller: qtdController,
+                                      focusNode: qtdFocus,
+                                      keyboardType: TextInputType.number,
+                                      textInputAction: TextInputAction.done,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Qtd',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      onSubmitted: (_) => adicionarItem(),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 56,
+                                      child: ElevatedButton.icon(
+                                        onPressed: adicionarItem,
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('Adicionar'),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: campoProduto()),
+                                    const SizedBox(width: 10),
+                                    SizedBox(
+                                      width: 100,
+                                      child: TextField(
+                                        controller: qtdController,
+                                        focusNode: qtdFocus,
+                                        keyboardType: TextInputType.number,
+                                        textInputAction: TextInputAction.done,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Qtd',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        onSubmitted: (_) => adicionarItem(),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    SizedBox(
+                                      height: 56,
+                                      child: ElevatedButton.icon(
+                                        onPressed: adicionarItem,
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('Adicionar'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
                         children: [
-                          Expanded(child: campoProduto()),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            width: 100,
-                            child: TextField(
-                              controller: qtdController,
-                              focusNode: qtdFocus,
-                              keyboardType: TextInputType.number,
-                              textInputAction: TextInputAction.done,
-                              decoration: const InputDecoration(
-                                labelText: 'Qtd',
-                                border: OutlineInputBorder(),
-                              ),
-                              onSubmitted: (_) => adicionarItem(),
+                          listaItens(),
+                          const SizedBox(height: 12),
+                          areaPagamentos(),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  Card(
+                    color: Colors.blue.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'TOTAL',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            height: 56,
-                            child: ElevatedButton.icon(
-                              onPressed: adicionarItem,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Adicionar'),
+                          Flexible(
+                            child: Text(
+                              moeda(total),
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Flexible(child: listaItens()),
-              const SizedBox(height: 12),
-              areaPagamentos(),
-              const SizedBox(height: 12),
-              Card(
-                color: Colors.blue.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'TOTAL',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        moeda(total),
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: salvando ? null : finalizarVenda,
+                      child: salvando
+                          ? const CircularProgressIndicator()
+                          : const Text(
+                              'FINALIZAR VENDA',
+                              style: TextStyle(fontSize: 18),
+                            ),
+                    ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 55,
-                child: ElevatedButton(
-                  onPressed: salvando ? null : finalizarVenda,
-                  child: salvando
-                      ? const CircularProgressIndicator()
-                      : const Text(
-                          'FINALIZAR VENDA',
-                          style: TextStyle(fontSize: 18),
-                        ),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

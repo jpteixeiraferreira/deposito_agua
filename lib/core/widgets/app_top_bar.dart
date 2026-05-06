@@ -26,6 +26,17 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
           icon: const Icon(Icons.people),
           onPressed: () => context.go('/clientes'),
         ),
+
+        IconButton(
+          tooltip: 'Vendas',
+          icon: const Icon(Icons.sell),
+          onPressed: () => context.go('/vendas'),
+        ),
+        IconButton(
+          tooltip: 'Relatórios',
+          icon: const Icon(Icons.bar_chart),
+          onPressed: () => context.go('/relatorios'),
+        ),
       ],
     );
   }

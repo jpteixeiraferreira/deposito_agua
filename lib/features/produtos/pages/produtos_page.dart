@@ -19,12 +19,22 @@ class _ProdutosPageState extends State<ProdutosPage> {
   final repository = ProdutoRepository();
 
   final buscaController = TextEditingController();
+  final tabelaVerticalController = ScrollController();
+  final tabelaHorizontalController = ScrollController();
 
   String busca = '';
 
   bool crescente = true;
 
   TipoOrdenacao ordenarPor = TipoOrdenacao.codigo;
+
+  @override
+  void dispose() {
+    buscaController.dispose();
+    tabelaVerticalController.dispose();
+    tabelaHorizontalController.dispose();
+    super.dispose();
+  }
 
   Future<void> abrirModalNovoProduto() async {
     final resultado = await showDialog(
@@ -155,9 +165,21 @@ class _ProdutosPageState extends State<ProdutosPage> {
   Widget tabela(List<Produto> produtos) {
     return Card(
       elevation: 3,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
+      clipBehavior: Clip.hardEdge,
+      child: Scrollbar(
+        controller: tabelaVerticalController,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: tabelaVerticalController,
+          primary: false,
+          child: Scrollbar(
+            controller: tabelaHorizontalController,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              controller: tabelaHorizontalController,
+              primary: false,
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
           headingRowColor: WidgetStateProperty.all(Colors.blueGrey.shade50),
           columns: [
             DataColumn(label: cabecalho('Código', TipoOrdenacao.codigo)),
@@ -193,6 +215,9 @@ class _ProdutosPageState extends State<ProdutosPage> {
               ],
             );
           }).toList(),
+              ),
+            ),
+          ),
         ),
       ),
     );
