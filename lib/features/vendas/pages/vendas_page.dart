@@ -667,40 +667,88 @@ class _VendasPageState extends State<VendasPage> {
 
   Widget listaItens() {
     if (itens.isEmpty) {
-      return const Center(child: Text('Nenhum item adicionado'));
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: Text('Nenhum item adicionado')),
+      );
     }
 
-    return ListView.builder(
-      itemCount: itens.length,
-      itemBuilder: (_, i) {
-        final item = itens[i];
+    return Column(
+      children: itens.asMap().entries.map((entry) {
+        final i = entry.key;
+        final item = entry.value;
+
+        final subtotal = moeda((item['subtotal'] as num).toDouble());
+        final detalhe =
+            '${item['quantidade']} x ${moeda((item['preco'] as num).toDouble())}';
 
         return Card(
-          child: ListTile(
-            title: Text(item['descricao']),
-            subtitle: Text(
-              '${item['quantidade']} x ${moeda((item['preco'] as num).toDouble())}',
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  moeda((item['subtotal'] as num).toDouble()),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                IconButton(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final remover = IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red),
                   onPressed: () {
                     setState(() {
                       itens.removeAt(i);
                     });
                   },
-                ),
-              ],
+                );
+
+                final info = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item['descricao'],
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(detalhe),
+                  ],
+                );
+
+                if (constraints.maxWidth < 420) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      info,
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              subtotal,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          remover,
+                        ],
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: info),
+                    const SizedBox(width: 12),
+                    Text(
+                      subtotal,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    remover,
+                  ],
+                );
+              },
             ),
           ),
         );
-      },
+      }).toList(),
     );
   }
 
@@ -719,10 +767,12 @@ class _VendasPageState extends State<VendasPage> {
 
             const SizedBox(height: 12),
 
-            Row(
-              children: [
-                SizedBox(
-                  width: 160,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final telaEstreita = constraints.maxWidth < 560;
+
+                final campoForma = SizedBox(
+                  width: telaEstreita ? double.infinity : 160,
                   child: DropdownButtonFormField<String>(
                     initialValue: tipoPagamento,
                     decoration: const InputDecoration(
@@ -749,43 +799,81 @@ class _VendasPageState extends State<VendasPage> {
                       });
                     },
                   ),
-                ),
+                );
 
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: TextField(
-                    controller: valorPagamentoController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Valor',
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => adicionarPagamento(),
+                final campoValor = TextField(
+                  controller: valorPagamentoController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Valor',
+                    border: OutlineInputBorder(),
                   ),
-                ),
+                  onSubmitted: (_) => adicionarPagamento(),
+                );
 
-                const SizedBox(width: 10),
-
-                SizedBox(
+                final botaoRestante = SizedBox(
                   height: 56,
                   child: OutlinedButton(
                     onPressed: sugerirPagamentoRestante,
                     child: const Text('Restante'),
                   ),
-                ),
+                );
 
-                const SizedBox(width: 10),
-
-                SizedBox(
+                final botaoAdicionar = SizedBox(
                   height: 56,
                   child: ElevatedButton.icon(
                     onPressed: adicionarPagamento,
                     icon: const Icon(Icons.add),
                     label: const Text('Adicionar'),
                   ),
-                ),
-              ],
+                );
+
+                if (constraints.maxWidth < 360) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      campoForma,
+                      const SizedBox(height: 10),
+                      campoValor,
+                      const SizedBox(height: 10),
+                      botaoRestante,
+                      const SizedBox(height: 10),
+                      botaoAdicionar,
+                    ],
+                  );
+                }
+
+                if (telaEstreita) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      campoForma,
+                      const SizedBox(height: 10),
+                      campoValor,
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(child: botaoRestante),
+                          const SizedBox(width: 10),
+                          Expanded(child: botaoAdicionar),
+                        ],
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    campoForma,
+                    const SizedBox(width: 10),
+                    Expanded(child: campoValor),
+                    const SizedBox(width: 10),
+                    botaoRestante,
+                    const SizedBox(width: 10),
+                    botaoAdicionar,
+                  ],
+                );
+              },
             ),
 
             const SizedBox(height: 12),
@@ -798,23 +886,48 @@ class _VendasPageState extends State<VendasPage> {
                   final index = entry.key;
                   final pagamento = entry.value;
 
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(pagamento['tipo'].toString().toUpperCase()),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(moeda((pagamento['valor'] as num).toDouble())),
-                        IconButton(
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final tipo = pagamento['tipo'].toString().toUpperCase();
+                        final valor = moeda(
+                          (pagamento['valor'] as num).toDouble(),
+                        );
+                        final remover = IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
                           onPressed: () {
                             setState(() {
                               pagamentos.removeAt(index);
                             });
                           },
-                        ),
-                      ],
+                        );
+
+                        if (constraints.maxWidth < 320) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(tipo),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Flexible(child: Text(valor)),
+                                  remover,
+                                ],
+                              ),
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: Text(tipo)),
+                            Text(valor),
+                            remover,
+                          ],
+                        );
+                      },
                     ),
                   );
                 }).toList(),
@@ -864,10 +977,11 @@ class _VendasPageState extends State<VendasPage> {
       appBar: const AppTopBar(titulo: 'Vendas'),
       body: SafeArea(
         child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
+          builder: (context, _) {
+            return SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
                 children: [
                   Card(
                     elevation: 2,
@@ -950,17 +1064,9 @@ class _VendasPageState extends State<VendasPage> {
 
                   const SizedBox(height: 12),
 
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          listaItens(),
-                          const SizedBox(height: 12),
-                          areaPagamentos(),
-                        ],
-                      ),
-                    ),
-                  ),
+                  listaItens(),
+                  const SizedBox(height: 12),
+                  areaPagamentos(),
 
                   const SizedBox(height: 12),
 
@@ -1009,6 +1115,7 @@ class _VendasPageState extends State<VendasPage> {
                     ),
                   ),
                 ],
+                ),
               ),
             );
           },
