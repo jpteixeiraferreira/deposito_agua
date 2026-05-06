@@ -39,6 +39,40 @@ class VendaRepository {
     return response['id'];
   }
 
+  Future<Map<String, dynamic>> buscarVendaDetalhada(String vendaId) async {
+    final response = await supabase
+        .from('vendas')
+        .select('''
+          id,
+          total,
+          data_venda,
+          clientes:cliente_id (
+            nome,
+            telefone,
+            endereco,
+            referencia,
+            cpf_cnpj
+          ),
+          venda_itens (
+            quantidade,
+            preco_unitario,
+            subtotal,
+            produtos:produto_id (
+              codigo,
+              descricao
+            )
+          ),
+          pagamentos (
+            tipo,
+            valor
+          )
+        ''')
+        .eq('id', vendaId)
+        .single();
+
+    return Map<String, dynamic>.from(response);
+  }
+
   Future<void> inserirItem({
     required String vendaId,
     required String produtoId,

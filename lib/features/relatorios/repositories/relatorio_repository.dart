@@ -11,9 +11,10 @@ class RelatorioRepository {
     return (inicio: inicio, fim: fim);
   }
 
-  Future<List<Map<String, dynamic>>> buscarVendasDoDia() async {
-    final intervalo = intervaloHoje();
-
+  Future<List<Map<String, dynamic>>> buscarVendas({
+    required DateTime inicio,
+    required DateTime fim,
+  }) async {
     final response = await supabase
         .from('vendas')
         .select('''
@@ -25,16 +26,17 @@ class RelatorioRepository {
             nome
           )
         ''')
-        .gte('data_venda', intervalo.inicio.toIso8601String())
-        .lt('data_venda', intervalo.fim.toIso8601String())
+        .gte('data_venda', inicio.toIso8601String())
+        .lt('data_venda', fim.toIso8601String())
         .order('data_venda', ascending: false);
 
     return List<Map<String, dynamic>>.from(response);
   }
 
-  Future<List<Map<String, dynamic>>> buscarPagamentosDoDia() async {
-    final intervalo = intervaloHoje();
-
+  Future<List<Map<String, dynamic>>> buscarPagamentos({
+    required DateTime inicio,
+    required DateTime fim,
+  }) async {
     final response = await supabase
         .from('pagamentos')
         .select('''
@@ -44,15 +46,16 @@ class RelatorioRepository {
             data_venda
           )
         ''')
-        .gte('vendas.data_venda', intervalo.inicio.toIso8601String())
-        .lt('vendas.data_venda', intervalo.fim.toIso8601String());
+        .gte('vendas.data_venda', inicio.toIso8601String())
+        .lt('vendas.data_venda', fim.toIso8601String());
 
     return List<Map<String, dynamic>>.from(response);
   }
 
-  Future<List<Map<String, dynamic>>> buscarProdutosVendidosDoDia() async {
-    final intervalo = intervaloHoje();
-
+  Future<List<Map<String, dynamic>>> buscarProdutosVendidos({
+    required DateTime inicio,
+    required DateTime fim,
+  }) async {
     final response = await supabase
         .from('venda_itens')
         .select('''
@@ -65,9 +68,24 @@ class RelatorioRepository {
           data_venda
         )
       ''')
-        .gte('vendas.data_venda', intervalo.inicio.toIso8601String())
-        .lt('vendas.data_venda', intervalo.fim.toIso8601String());
+        .gte('vendas.data_venda', inicio.toIso8601String())
+        .lt('vendas.data_venda', fim.toIso8601String());
 
     return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<List<Map<String, dynamic>>> buscarVendasDoDia() async {
+    final intervalo = intervaloHoje();
+    return buscarVendas(inicio: intervalo.inicio, fim: intervalo.fim);
+  }
+
+  Future<List<Map<String, dynamic>>> buscarPagamentosDoDia() async {
+    final intervalo = intervaloHoje();
+    return buscarPagamentos(inicio: intervalo.inicio, fim: intervalo.fim);
+  }
+
+  Future<List<Map<String, dynamic>>> buscarProdutosVendidosDoDia() async {
+    final intervalo = intervaloHoje();
+    return buscarProdutosVendidos(inicio: intervalo.inicio, fim: intervalo.fim);
   }
 }

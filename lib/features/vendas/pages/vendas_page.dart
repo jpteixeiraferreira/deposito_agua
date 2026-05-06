@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:printing/printing.dart';
 
 import '../../../core/widgets/app_top_bar.dart';
+import '../../relatorios/pdf/recibo_venda_pdf.dart';
+import '../../relatorios/repositories/config_recibo_repository.dart';
 import '../../clientes/models/cliente_model.dart';
 import '../../clientes/repositories/cliente_repository.dart';
 import '../../produtos/models/produto_model.dart';
@@ -17,6 +20,7 @@ class VendasPage extends StatefulWidget {
 
 class _VendasPageState extends State<VendasPage> {
   final vendaRepo = VendaRepository();
+  final configReciboRepo = ConfigReciboRepository();
   final clienteRepo = ClienteRepository();
   final produtoRepo = ProdutoRepository();
 
@@ -410,11 +414,25 @@ class _VendasPageState extends State<VendasPage> {
           valor: (pagamento['valor'] as num).toDouble(),
         );
       }
+
+      final vendaDetalhada = await vendaRepo.buscarVendaDetalhada(vendaId);
+      final configRecibo = await configReciboRepo.buscar();
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Venda realizada com sucesso')),
       );
+
+      await Printing.layoutPdf(
+        name: 'recibo-venda-$vendaId.pdf',
+        onLayout: (_) => ReciboVendaPdf.gerar(
+          vendaDetalhada,
+          config: configRecibo,
+        ),
+      );
+
+      if (!mounted) return;
 
       setState(() {
         clienteSelecionado = null;

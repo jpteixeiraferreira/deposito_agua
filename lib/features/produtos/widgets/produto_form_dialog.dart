@@ -176,7 +176,7 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
                     title: const Text('Produto ativo'),
                     subtitle: Text(
                       ativo
-                          ? 'Disponivel para vendas e buscas'
+                          ? 'Disponível para vendas e buscas'
                           : 'Oculto em vendas e buscas',
                     ),
                     controlAffinity: ListTileControlAffinity.leading,
