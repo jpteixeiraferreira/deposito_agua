@@ -5,6 +5,7 @@ class Produto {
   final double precoCusto;
   final double precoVenda;
   final double estoqueAtual;
+  final bool ativo;
 
   Produto({
     required this.id,
@@ -13,6 +14,7 @@ class Produto {
     required this.precoCusto,
     required this.precoVenda,
     required this.estoqueAtual,
+    required this.ativo,
   });
 
   factory Produto.fromMap(Map<String, dynamic> map) {
@@ -23,6 +25,7 @@ class Produto {
       precoCusto: double.tryParse(map['preco_custo'].toString()) ?? 0,
       precoVenda: double.tryParse(map['preco_venda'].toString()) ?? 0,
       estoqueAtual: double.tryParse(map['estoque_atual'].toString()) ?? 0,
+      ativo: map['ativo'] as bool? ?? true,
     );
   }
 }

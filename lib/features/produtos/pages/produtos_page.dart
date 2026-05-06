@@ -25,6 +25,7 @@ class _ProdutosPageState extends State<ProdutosPage> {
   String busca = '';
 
   bool crescente = true;
+  bool exibirInativos = false;
 
   TipoOrdenacao ordenarPor = TipoOrdenacao.codigo;
 
@@ -187,16 +188,29 @@ class _ProdutosPageState extends State<ProdutosPage> {
             DataColumn(label: cabecalho('Estoque', TipoOrdenacao.estoque)),
             const DataColumn(label: Text('Custo')),
             DataColumn(label: cabecalho('Venda', TipoOrdenacao.venda)),
+            const DataColumn(label: Text('Status')),
             const DataColumn(label: Text('Ações')),
           ],
           rows: produtos.map((p) {
             return DataRow(
+              color: !p.ativo
+                  ? WidgetStateProperty.all(Colors.grey.shade100)
+                  : null,
               cells: [
                 DataCell(Text(p.codigo)),
                 DataCell(Text(p.descricao)),
                 DataCell(Text(p.estoqueAtual.toStringAsFixed(0))),
                 DataCell(Text('R\$ ${p.precoCusto.toStringAsFixed(2)}')),
                 DataCell(Text('R\$ ${p.precoVenda.toStringAsFixed(2)}')),
+                DataCell(
+                  Text(
+                    p.ativo ? 'Ativo' : 'Inativo',
+                    style: TextStyle(
+                      color: p.ativo ? Colors.green.shade700 : Colors.red,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
                 DataCell(
                   IconButton(
                     icon: const Icon(Icons.edit),
@@ -230,7 +244,11 @@ class _ProdutosPageState extends State<ProdutosPage> {
         final p = produtos[index];
 
         return Card(
+          color: p.ativo ? null : Colors.grey.shade100,
           child: ListTile(
+            leading: p.ativo
+                ? null
+                : const Icon(Icons.block, color: Colors.red),
             title: Text(p.descricao),
             subtitle: Text(
               'Código: ${p.codigo}\nEstoque: ${p.estoqueAtual.toStringAsFixed(0)}',
@@ -254,25 +272,64 @@ class _ProdutosPageState extends State<ProdutosPage> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            TextField(
-              controller: buscaController,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search),
-                hintText: 'Buscar produto...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  busca = value;
-                });
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final filtroInativos = SizedBox(
+                  height: 56,
+                  child: FilterChip(
+                    label: const Text('Exibir inativos'),
+                    selected: exibirInativos,
+                    onSelected: (value) {
+                      setState(() {
+                        exibirInativos = value;
+                      });
+                    },
+                  ),
+                );
+
+                final campoBusca = TextField(
+                  controller: buscaController,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: 'Buscar produto...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      busca = value;
+                    });
+                  },
+                );
+
+                if (constraints.maxWidth < 520) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      campoBusca,
+                      const SizedBox(height: 8),
+                      filtroInativos,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: campoBusca),
+                    const SizedBox(width: 12),
+                    filtroInativos,
+                  ],
+                );
               },
             ),
             const SizedBox(height: 16),
             Expanded(
               child: FutureBuilder<List<Produto>>(
-                future: repository.buscarTodos(),
+                future: repository.buscarTodos(
+                  incluirInativos: exibirInativos,
+                ),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());

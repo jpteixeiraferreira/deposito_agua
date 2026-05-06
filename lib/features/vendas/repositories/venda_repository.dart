@@ -16,6 +16,7 @@ class VendaRepository {
     final response = await supabase
         .from('produtos')
         .select('id, descricao, preco_venda, estoque_atual')
+        .eq('ativo', true)
         .order('descricao', ascending: true);
 
     return List<Map<String, dynamic>>.from(response);

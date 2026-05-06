@@ -4,11 +4,14 @@ import '../models/produto_model.dart';
 class ProdutoRepository {
   final supabase = Supabase.instance.client;
 
-  Future<List<Produto>> buscarTodos() async {
-    final response = await supabase
-        .from('produtos')
-        .select()
-        .order('descricao');
+  Future<List<Produto>> buscarTodos({bool incluirInativos = false}) async {
+    final response = incluirInativos
+        ? await supabase.from('produtos').select().order('descricao')
+        : await supabase
+              .from('produtos')
+              .select()
+              .eq('ativo', true)
+              .order('descricao');
 
     return response.map<Produto>((item) => Produto.fromMap(item)).toList();
   }
@@ -28,6 +31,7 @@ class ProdutoRepository {
           'preco_custo': precoCusto,
           'preco_venda': precoVenda,
           'estoque_atual': estoqueInicial,
+          'ativo': true,
         })
         .select()
         .single();
@@ -65,6 +69,7 @@ class ProdutoRepository {
     required String descricao,
     required double precoCusto,
     required double precoVenda,
+    required bool ativo,
   }) async {
     await supabase
         .from('produtos')
@@ -72,6 +77,7 @@ class ProdutoRepository {
           'descricao': descricao,
           'preco_custo': precoCusto,
           'preco_venda': precoVenda,
+          'ativo': ativo,
         })
         .eq('id', id);
   }

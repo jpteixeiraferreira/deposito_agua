@@ -22,6 +22,7 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
   final estoque = TextEditingController();
 
   bool loading = false;
+  bool ativo = true;
 
   double parseNumero(String valor) {
     return double.tryParse(valor.replaceAll(',', '.').trim()) ?? 0;
@@ -51,6 +52,7 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
           descricao: descricao.text.trim(),
           precoCusto: parseNumero(precoCusto.text),
           precoVenda: parseNumero(precoVenda.text),
+          ativo: ativo,
         );
       }
 
@@ -106,7 +108,18 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
       precoVenda.text = widget.produto!.precoVenda.toString();
 
       estoque.text = widget.produto!.estoqueAtual.toString();
+
+      ativo = widget.produto!.ativo;
     }
+  }
+
+  @override
+  void dispose() {
+    descricao.dispose();
+    precoCusto.dispose();
+    precoVenda.dispose();
+    estoque.dispose();
+    super.dispose();
   }
 
   @override
@@ -155,6 +168,23 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
                     label: 'Estoque Inicial',
                     controller: estoque,
                     tipo: TextInputType.number,
+                  ),
+                if (widget.produto != null)
+                  CheckboxListTile(
+                    value: ativo,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Produto ativo'),
+                    subtitle: Text(
+                      ativo
+                          ? 'Disponivel para vendas e buscas'
+                          : 'Oculto em vendas e buscas',
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (value) {
+                      setState(() {
+                        ativo = value ?? true;
+                      });
+                    },
                   ),
               ],
             ),
