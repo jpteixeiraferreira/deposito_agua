@@ -28,7 +28,11 @@ class VendaRepository {
   }) async {
     final response = await supabase
         .from('vendas')
-        .insert({'cliente_id': clienteId, 'total': total})
+        .insert({
+          'cliente_id': clienteId,
+          'total': total,
+          'data_venda': DateTime.now().toIso8601String(),
+        })
         .select()
         .single();
 

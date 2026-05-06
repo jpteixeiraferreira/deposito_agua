@@ -65,6 +65,11 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     return 'R\$ ${valor.toStringAsFixed(2).replaceAll('.', ',')}';
   }
 
+  String get dataHojeTexto {
+    final hoje = DateTime.now();
+    return '${hoje.day.toString().padLeft(2, '0')}/${hoje.month.toString().padLeft(2, '0')}/${hoje.year}';
+  }
+
   double get totalVendido {
     return vendas.fold(
       0,
@@ -275,6 +280,19 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Relatorio de hoje: $dataHojeTexto',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
             Wrap(
               spacing: 12,
               runSpacing: 12,
