@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/empresa_context.dart';
+
 class RelatorioRepository {
   final supabase = Supabase.instance.client;
 
@@ -11,66 +13,158 @@ class RelatorioRepository {
     return (inicio: inicio, fim: fim);
   }
 
+  PostgrestFilterBuilder<List<Map<String, dynamic>>> _filtroPeriodo(
+    PostgrestFilterBuilder<List<Map<String, dynamic>>> query, {
+    DateTime? inicio,
+    DateTime? fim,
+    String coluna = 'data_venda',
+  }) {
+    var filtrada = query;
+    if (inicio != null) filtrada = filtrada.gte(coluna, inicio.toIso8601String());
+    if (fim != null) filtrada = filtrada.lt(coluna, fim.toIso8601String());
+    return filtrada;
+  }
+
   Future<List<Map<String, dynamic>>> buscarVendas({
-    required DateTime inicio,
-    required DateTime fim,
+    DateTime? inicio,
+    DateTime? fim,
+    String? clienteId,
+    String? produtoId,
+    bool incluirCanceladas = true,
   }) async {
-    final response = await supabase
-        .from('vendas')
-        .select('''
+    final empresaId = await EmpresaContext.instance.empresaId();
+    final select = produtoId == null
+        ? '''
           id,
+          numero,
+          status,
           total,
           data_venda,
-          cliente_id,
           clientes:cliente_id (
             nome
+          ),
+          venda_itens (
+            quantidade,
+            preco_unitario,
+            subtotal,
+            produtos:produto_id (
+              id,
+              codigo,
+              descricao,
+              preco_custo
+            )
           )
-        ''')
-        .gte('data_venda', inicio.toIso8601String())
-        .lt('data_venda', fim.toIso8601String())
-        .order('data_venda', ascending: false);
+        '''
+        : '''
+          id,
+          numero,
+          status,
+          total,
+          data_venda,
+          clientes:cliente_id (
+            nome
+          ),
+          venda_itens!inner (
+            quantidade,
+            preco_unitario,
+            subtotal,
+            produtos:produto_id (
+              id,
+              codigo,
+              descricao,
+              preco_custo
+            )
+          )
+        ''';
 
+    var query = supabase.from('vendas').select(select);
+    query = query.eq('empresa_id', empresaId);
+    query = _filtroPeriodo(query, inicio: inicio, fim: fim);
+
+    if (clienteId != null) query = query.eq('cliente_id', clienteId);
+    if (produtoId != null) query = query.eq('venda_itens.produto_id', produtoId);
+    if (!incluirCanceladas) query = query.neq('status', 'cancelada');
+
+    final response = await query.order('data_venda', ascending: false);
     return List<Map<String, dynamic>>.from(response);
   }
 
   Future<List<Map<String, dynamic>>> buscarPagamentos({
-    required DateTime inicio,
-    required DateTime fim,
+    DateTime? inicio,
+    DateTime? fim,
+    String? clienteId,
+    String? produtoId,
   }) async {
-    final response = await supabase
-        .from('pagamentos')
-        .select('''
-          tipo,
-          valor,
-          vendas!inner (
-            data_venda
-          )
-        ''')
-        .gte('vendas.data_venda', inicio.toIso8601String())
-        .lt('vendas.data_venda', fim.toIso8601String());
+    final empresaId = await EmpresaContext.instance.empresaId();
+    final response = await buscarVendas(
+      inicio: inicio,
+      fim: fim,
+      clienteId: clienteId,
+      produtoId: produtoId,
+      incluirCanceladas: false,
+    );
 
-    return List<Map<String, dynamic>>.from(response);
+    final pagamentos = <Map<String, dynamic>>[];
+    for (final venda in response) {
+      final vendaCompleta = await supabase
+          .from('pagamentos')
+          .select('tipo, valor')
+          .eq('empresa_id', empresaId)
+          .eq('venda_id', venda['id']);
+      pagamentos.addAll(List<Map<String, dynamic>>.from(vendaCompleta));
+    }
+
+    return pagamentos;
   }
 
   Future<List<Map<String, dynamic>>> buscarProdutosVendidos({
-    required DateTime inicio,
-    required DateTime fim,
+    DateTime? inicio,
+    DateTime? fim,
+    String? clienteId,
+    String? produtoId,
   }) async {
-    final response = await supabase
-        .from('venda_itens')
-        .select('''
-        quantidade,
-        subtotal,
-        produtos (
-          descricao
-        ),
-        vendas!inner (
-          data_venda
-        )
-      ''')
-        .gte('vendas.data_venda', inicio.toIso8601String())
-        .lt('vendas.data_venda', fim.toIso8601String());
+    final vendas = await buscarVendas(
+      inicio: inicio,
+      fim: fim,
+      clienteId: clienteId,
+      produtoId: produtoId,
+      incluirCanceladas: false,
+    );
 
+    final itens = <Map<String, dynamic>>[];
+    for (final venda in vendas) {
+      itens.addAll(List<Map<String, dynamic>>.from(venda['venda_itens'] ?? []));
+    }
+
+    return itens;
+  }
+
+  Future<List<Map<String, dynamic>>> buscarMovimentacoesEstoque({
+    DateTime? inicio,
+    DateTime? fim,
+    String? produtoId,
+  }) async {
+    final empresaId = await EmpresaContext.instance.empresaId();
+    var query = supabase.from('movimentacoes_estoque').select('''
+      id,
+      tipo,
+      quantidade,
+      observacao,
+      criado_em,
+      produtos:produto_id (
+        id,
+        codigo,
+        descricao,
+        preco_custo,
+        preco_venda
+      )
+    ''');
+
+    query = query.eq('empresa_id', empresaId);
+    query = _filtroPeriodo(query, inicio: inicio, fim: fim, coluna: 'criado_em');
+    if (produtoId != null) query = query.eq('produto_id', produtoId);
+
+    final response = await query.order('criado_em', ascending: false);
     return List<Map<String, dynamic>>.from(response);
   }
 

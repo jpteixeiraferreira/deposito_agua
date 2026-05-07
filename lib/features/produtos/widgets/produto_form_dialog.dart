@@ -1,11 +1,11 @@
-// lib/features/produtos/widgets/produto_form_dialog.dart
-
 import 'package:flutter/material.dart';
-import '../repositories/produto_repository.dart';
+
 import '../models/produto_model.dart';
+import '../repositories/produto_repository.dart';
 
 class ProdutoFormDialog extends StatefulWidget {
   final Produto? produto;
+
   const ProdutoFormDialog({super.key, this.produto});
 
   @override
@@ -25,13 +25,72 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
   bool ativo = true;
 
   double parseNumero(String valor) {
-    return double.tryParse(valor.replaceAll(',', '.').trim()) ?? 0;
+    final texto = valor.trim();
+    if (texto.isEmpty) return 0;
+
+    if (texto.contains(',') && texto.contains('.')) {
+      return double.tryParse(texto.replaceAll('.', '').replaceAll(',', '.')) ??
+          0;
+    }
+
+    return double.tryParse(texto.replaceAll(',', '.')) ?? 0;
+  }
+
+  bool validarRegraPrecos() {
+    final custo = parseNumero(precoCusto.text);
+    final venda = parseNumero(precoVenda.text);
+
+    if (venda <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('O preco de venda deve ser maior que zero'),
+        ),
+      );
+      return false;
+    }
+
+    if (custo > venda) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('O custo nao pode ser maior que o preco de venda'),
+        ),
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  String? validarPrecoCusto(String? valor) {
+    final custo = parseNumero(valor ?? '');
+    final venda = parseNumero(precoVenda.text);
+
+    if (custo < 0) return 'O custo nao pode ser negativo';
+
+    if (precoVenda.text.trim().isNotEmpty && custo > venda) {
+      return 'O custo nao pode ser maior que o preco de venda';
+    }
+
+    return null;
+  }
+
+  String? validarPrecoVenda(String? valor) {
+    final venda = parseNumero(valor ?? '');
+    final custo = parseNumero(precoCusto.text);
+
+    if ((valor ?? '').trim().isEmpty) return 'Informe o preco de venda';
+    if (venda <= 0) return 'O preco de venda deve ser maior que zero';
+
+    if (custo > venda) {
+      return 'O custo nao pode ser maior que o preco de venda';
+    }
+
+    return null;
   }
 
   Future<void> salvar() async {
-    if (!formKey.currentState!.validate()) {
-      return;
-    }
+    if (!formKey.currentState!.validate()) return;
+    if (!validarRegraPrecos()) return;
 
     try {
       setState(() => loading = true);
@@ -56,19 +115,19 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
         );
       }
 
-      if (mounted) {
-        Navigator.pop(context, true);
-      }
-    } catch (e) {
+      if (mounted) Navigator.pop(context, true);
+    } on ArgumentError catch (e) {
       if (!mounted) return;
-
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message.toString())));
+    } catch (_) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Erro ao salvar')));
     } finally {
-      if (mounted) {
-        setState(() => loading = false);
-      }
+      if (mounted) setState(() => loading = false);
     }
   }
 
@@ -100,16 +159,13 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
   void initState() {
     super.initState();
 
-    if (widget.produto != null) {
-      descricao.text = widget.produto!.descricao;
-
-      precoCusto.text = widget.produto!.precoCusto.toString();
-
-      precoVenda.text = widget.produto!.precoVenda.toString();
-
-      estoque.text = widget.produto!.estoqueAtual.toString();
-
-      ativo = widget.produto!.ativo;
+    final produto = widget.produto;
+    if (produto != null) {
+      descricao.text = produto.descricao;
+      precoCusto.text = produto.precoCusto.toString();
+      precoVenda.text = produto.precoVenda.toString();
+      estoque.text = produto.estoqueAtual.toString();
+      ativo = produto.ativo;
     }
   }
 
@@ -126,7 +182,6 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.produto == null ? 'Novo Produto' : 'Editar Produto'),
-
       content: SizedBox(
         width: 420,
         child: Form(
@@ -136,36 +191,30 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 campoTexto(
-                  label: 'Descrição',
+                  label: 'Descricao',
                   controller: descricao,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Informe a descrição';
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Informe a descricao';
                     }
                     return null;
                   },
                 ),
-
                 campoTexto(
-                  label: 'Preço de Custo',
+                  label: 'Preco de custo',
                   controller: precoCusto,
                   tipo: TextInputType.number,
+                  validator: validarPrecoCusto,
                 ),
-
                 campoTexto(
-                  label: 'Preço de Venda',
+                  label: 'Preco de venda',
                   controller: precoVenda,
                   tipo: TextInputType.number,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Informe o preço';
-                    }
-                    return null;
-                  },
+                  validator: validarPrecoVenda,
                 ),
                 if (widget.produto == null)
                   campoTexto(
-                    label: 'Estoque Inicial',
+                    label: 'Estoque inicial',
                     controller: estoque,
                     tipo: TextInputType.number,
                   ),
@@ -176,7 +225,7 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
                     title: const Text('Produto ativo'),
                     subtitle: Text(
                       ativo
-                          ? 'Disponível para vendas e buscas'
+                          ? 'Disponivel para vendas e buscas'
                           : 'Oculto em vendas e buscas',
                     ),
                     controlAffinity: ListTileControlAffinity.leading,
@@ -191,13 +240,11 @@ class _ProdutoFormDialogState extends State<ProdutoFormDialog> {
           ),
         ),
       ),
-
       actions: [
         TextButton(
           onPressed: loading ? null : () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
-
         ElevatedButton(
           onPressed: loading ? null : salvar,
           child: loading

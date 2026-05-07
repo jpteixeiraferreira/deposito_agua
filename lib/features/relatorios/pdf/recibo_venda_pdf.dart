@@ -122,7 +122,7 @@ class ReciboVendaPdf {
                 _boxInfo('DATA DA EMISSÃO', _data(data), 22),
                 _boxInfo(
                   'NÚMERO DO PEDIDO',
-                  _numeroPedido(venda['id']),
+                  _numeroPedido(venda['numero'] ?? venda['id']),
                   18,
                 ),
               ],

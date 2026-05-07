@@ -223,6 +223,17 @@ class _VendasPageState extends State<VendasPage> {
     }
 
     final p = produtoSelecionado!;
+
+    if (p.precoVenda <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este produto esta sem preco de venda valido'),
+        ),
+      );
+      produtoFocus.requestFocus();
+      return;
+    }
+
     final index = itens.indexWhere((i) => i['produto_id'] == p.id);
 
     final qtdAtual = index >= 0
@@ -770,6 +781,17 @@ class _VendasPageState extends State<VendasPage> {
     );
   }
 
+  Future<void> consultarVenda() async {
+    final resultado = await showDialog<bool>(
+      context: context,
+      builder: (_) => ConsultaVendaDialog(vendaRepo: vendaRepo),
+    );
+
+    if (resultado == true) {
+      await carregarDados();
+    }
+  }
+
   Widget areaPagamentos() {
     return Card(
       elevation: 2,
@@ -987,12 +1009,14 @@ class _VendasPageState extends State<VendasPage> {
     if (loading) {
       return const Scaffold(
         appBar: AppTopBar(titulo: 'Vendas'),
+        bottomNavigationBar: AppBottomNav(),
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       appBar: const AppTopBar(titulo: 'Vendas'),
+      bottomNavigationBar: const AppBottomNav(),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, _) {
@@ -1001,6 +1025,15 @@ class _VendasPageState extends State<VendasPage> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                 children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: consultarVenda,
+                      icon: const Icon(Icons.manage_search),
+                      label: const Text('Consultar venda'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Card(
                     elevation: 2,
                     child: Padding(
@@ -1139,6 +1172,250 @@ class _VendasPageState extends State<VendasPage> {
           },
         ),
       ),
+    );
+  }
+}
+
+class ConsultaVendaDialog extends StatefulWidget {
+  final VendaRepository vendaRepo;
+
+  const ConsultaVendaDialog({super.key, required this.vendaRepo});
+
+  @override
+  State<ConsultaVendaDialog> createState() => _ConsultaVendaDialogState();
+}
+
+class _ConsultaVendaDialogState extends State<ConsultaVendaDialog> {
+  final numeroController = TextEditingController();
+  final motivoController = TextEditingController();
+  final configReciboRepo = ConfigReciboRepository();
+
+  Map<String, dynamic>? venda;
+  bool loading = false;
+
+  @override
+  void dispose() {
+    numeroController.dispose();
+    motivoController.dispose();
+    super.dispose();
+  }
+
+  String moeda(double valor) {
+    return 'R\$ ${valor.toStringAsFixed(2).replaceAll('.', ',')}';
+  }
+
+  String dataHora(Object? valor) {
+    final data = DateTime.tryParse((valor ?? '').toString());
+    if (data == null) return '';
+    return '${data.day.toString().padLeft(2, '0')}/'
+        '${data.month.toString().padLeft(2, '0')}/'
+        '${data.year} '
+        '${data.hour.toString().padLeft(2, '0')}:'
+        '${data.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> buscar() async {
+    final numero = int.tryParse(numeroController.text.trim());
+
+    if (numero == null || numero <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe um numero de venda valido')),
+      );
+      return;
+    }
+
+    setState(() => loading = true);
+
+    try {
+      final encontrada = await widget.vendaRepo.buscarVendaPorNumero(numero);
+      if (!mounted) return;
+      setState(() {
+        venda = encontrada;
+      });
+
+      if (encontrada == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Venda nao encontrada')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> imprimir() async {
+    final vendaAtual = venda;
+    if (vendaAtual == null) return;
+
+    final detalhada = await widget.vendaRepo.buscarVendaDetalhada(
+      vendaAtual['id'].toString(),
+    );
+    final config = await configReciboRepo.buscar();
+
+    await Printing.layoutPdf(
+      name: 'recibo-venda-${detalhada['numero'] ?? detalhada['id']}.pdf',
+      onLayout: (_) => ReciboVendaPdf.gerar(detalhada, config: config),
+    );
+  }
+
+  Future<void> cancelar() async {
+    final vendaAtual = venda;
+    if (vendaAtual == null) return;
+
+    final status = (vendaAtual['status'] ?? 'finalizada').toString();
+    if (status == 'cancelada') return;
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancelar venda?'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: motivoController,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Motivo do cancelamento',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Voltar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Cancelar venda'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
+
+    setState(() => loading = true);
+
+    try {
+      await widget.vendaRepo.cancelarVenda(
+        vendaId: vendaAtual['id'].toString(),
+        motivo: motivoController.text,
+      );
+
+      final numero = int.tryParse(numeroController.text.trim());
+      final atualizada = numero == null
+          ? null
+          : await widget.vendaRepo.buscarVendaPorNumero(numero);
+
+      if (!mounted) return;
+      setState(() {
+        venda = atualizada;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Venda cancelada com sucesso')),
+      );
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vendaAtual = venda;
+    final cliente = vendaAtual?['clientes'] as Map<String, dynamic>?;
+    final status = (vendaAtual?['status'] ?? 'finalizada').toString();
+    final cancelada = status == 'cancelada';
+    final total = ((vendaAtual?['total'] as num?)?.toDouble() ?? 0);
+
+    return AlertDialog(
+      title: const Text('Consultar venda'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: numeroController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Numero da venda',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => buscar(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    onPressed: loading ? null : buscar,
+                    icon: const Icon(Icons.search),
+                    label: const Text('Buscar'),
+                  ),
+                ),
+              ],
+            ),
+            if (loading) const LinearProgressIndicator(),
+            if (vendaAtual != null) ...[
+              const SizedBox(height: 16),
+              Card(
+                color: cancelada ? Colors.red.shade50 : null,
+                child: ListTile(
+                  leading: Icon(
+                    cancelada ? Icons.cancel : Icons.receipt_long,
+                    color: cancelada ? Colors.red : null,
+                  ),
+                  title: Text(
+                    'Venda ${vendaAtual['numero'] ?? ''} - '
+                    '${cliente?['nome'] ?? 'Sem cliente'}',
+                    style: TextStyle(
+                      color: cancelada ? Colors.red : null,
+                      decoration: cancelada ? TextDecoration.lineThrough : null,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${dataHora(vendaAtual['data_venda'])}\n'
+                    '${cancelada ? 'Cancelada' : 'Finalizada'}',
+                  ),
+                  trailing: Text(
+                    moeda(total),
+                    style: TextStyle(
+                      color: cancelada ? Colors.red : null,
+                      decoration: cancelada ? TextDecoration.lineThrough : null,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Fechar'),
+        ),
+        if (vendaAtual != null)
+          OutlinedButton.icon(
+            onPressed: loading ? null : imprimir,
+            icon: const Icon(Icons.print),
+            label: const Text('Reimprimir'),
+          ),
+        if (vendaAtual != null && !cancelada)
+          ElevatedButton.icon(
+            onPressed: loading ? null : cancelar,
+            icon: const Icon(Icons.cancel),
+            label: const Text('Cancelar venda'),
+          ),
+      ],
     );
   }
 }

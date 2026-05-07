@@ -1,14 +1,25 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../../core/widgets/app_top_bar.dart';
+import '../../clientes/models/cliente_model.dart';
+import '../../clientes/repositories/cliente_repository.dart';
+import '../../produtos/models/produto_model.dart';
+import '../../produtos/repositories/produto_repository.dart';
 import '../../vendas/repositories/venda_repository.dart';
 import '../models/config_recibo_model.dart';
 import '../pdf/recibo_venda_pdf.dart';
 import '../pdf/relatorio_vendas_pdf.dart';
 import '../repositories/config_recibo_repository.dart';
 import '../repositories/relatorio_repository.dart';
+
+enum TipoRelatorio { vendas, movimentacoes }
+enum TipoMovimentacaoFiltro { todas, entradas, saidas }
 
 class RelatoriosPage extends StatefulWidget {
   const RelatoriosPage({super.key});
@@ -21,16 +32,27 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
   final repo = RelatorioRepository();
   final configRepo = ConfigReciboRepository();
   final vendaRepo = VendaRepository();
+  final clienteRepo = ClienteRepository();
+  final produtoRepo = ProdutoRepository();
 
   bool loading = true;
 
   List<Map<String, dynamic>> vendas = [];
   List<Map<String, dynamic>> pagamentos = [];
   List<Map<String, dynamic>> produtosVendidos = [];
+  List<Map<String, dynamic>> movimentacoes = [];
+  List<Cliente> clientes = [];
+  List<Produto> produtos = [];
   late DateTime inicio;
   late DateTime fim;
   ConfigRecibo configRecibo = ConfigRecibo.padrao();
   bool relatorioDetalhado = false;
+  bool usarPeriodo = true;
+  TipoRelatorio tipoRelatorio = TipoRelatorio.vendas;
+  TipoMovimentacaoFiltro tipoMovimentacaoFiltro =
+      TipoMovimentacaoFiltro.todas;
+  String? clienteFiltroId;
+  String? produtoFiltroId;
 
   @override
   void initState() {
@@ -45,11 +67,34 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     setState(() => loading = true);
 
     final configData = await configRepo.buscar();
-    final vendasData = await repo.buscarVendas(inicio: inicio, fim: fim);
-    final pagamentosData = await repo.buscarPagamentos(inicio: inicio, fim: fim);
+    final inicioFiltro = usarPeriodo ? inicio : null;
+    final fimFiltro = usarPeriodo ? fim : null;
+    final vendasData = await repo.buscarVendas(
+      inicio: inicioFiltro,
+      fim: fimFiltro,
+      clienteId: clienteFiltroId,
+      produtoId: produtoFiltroId,
+    );
+    final pagamentosData = await repo.buscarPagamentos(
+      inicio: inicioFiltro,
+      fim: fimFiltro,
+      clienteId: clienteFiltroId,
+      produtoId: produtoFiltroId,
+    );
     final produtosData = await repo.buscarProdutosVendidos(
-      inicio: inicio,
-      fim: fim,
+      inicio: inicioFiltro,
+      fim: fimFiltro,
+      clienteId: clienteFiltroId,
+      produtoId: produtoFiltroId,
+    );
+    final movimentacoesData = await repo.buscarMovimentacoesEstoque(
+      inicio: inicioFiltro,
+      fim: fimFiltro,
+      produtoId: produtoFiltroId,
+    );
+    final clientesData = await clienteRepo.buscarTodos(incluirInativos: true);
+    final produtosDataFiltro = await produtoRepo.buscarTodos(
+      incluirInativos: true,
     );
 
     if (!mounted) return;
@@ -58,6 +103,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
       vendas = vendasData;
       pagamentos = pagamentosData;
       produtosVendidos = produtosData;
+      movimentacoes = movimentacoesData;
+      clientes = clientesData;
+      produtos = produtosDataFiltro;
       configRecibo = configData;
       loading = false;
     });
@@ -93,12 +141,22 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     setState(() {
       inicio = intervalo.inicio;
       fim = intervalo.fim;
+      usarPeriodo = true;
     });
 
     await carregar();
   }
 
   Future<void> exportarPdf() async {
+    if (tipoRelatorio == TipoRelatorio.movimentacoes) {
+      await Printing.layoutPdf(
+        name:
+            'relatorio-movimentacoes-${dataArquivo(inicio)}-${dataArquivo(fimExibicao)}.pdf',
+        onLayout: (_) => gerarPdfMovimentacoes(),
+      );
+      return;
+    }
+
     await Printing.layoutPdf(
       name: 'relatorio-vendas-${dataArquivo(inicio)}-${dataArquivo(fimExibicao)}.pdf',
       onLayout: (_) => RelatorioVendasPdf.gerar(
@@ -110,6 +168,106 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
         detalhado: relatorioDetalhado,
       ),
     );
+  }
+
+  Future<Uint8List> gerarPdfMovimentacoes() async {
+    final fonteBase = await PdfGoogleFonts.openSansRegular();
+    final fonteNegrito = await PdfGoogleFonts.openSansBold();
+    final doc = pw.Document();
+    final lista = movimentacoesFiltradas;
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        theme: pw.ThemeData.withFont(base: fonteBase, bold: fonteNegrito),
+        margin: const pw.EdgeInsets.all(24),
+        build: (_) => [
+          pw.Text(
+            'Relatorio de movimentacoes',
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text(usarPeriodo ? 'Periodo: $periodoTexto' : 'Todos os periodos'),
+          pw.SizedBox(height: 16),
+          pw.Text('Custo das entradas: ${moeda(custoEntradasMovimentacao)}'),
+          pw.Text('Valor das saidas: ${moeda(valorSaidasMovimentacao)}'),
+          pw.Text('Lucro estimado: ${moeda(lucroEstimadoMovimentacao)}'),
+          pw.SizedBox(height: 16),
+          pw.Table(
+            border: pw.TableBorder.all(width: 0.5),
+            children: [
+              _linhaPdf(['Tipo', 'Produto', 'Qtd', 'Observacao']),
+              ...lista.map((mov) {
+                final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
+                final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
+                return _linhaPdf([
+                  (mov['tipo'] ?? '').toString(),
+                  (produto['descricao'] ?? 'Produto').toString(),
+                  qtd.toStringAsFixed(0),
+                  (mov['observacao'] ?? '').toString(),
+                ]);
+              }),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return doc.save();
+  }
+
+  pw.TableRow _linhaPdf(List<String> colunas) {
+    return pw.TableRow(
+      children: colunas
+          .map(
+            (texto) => pw.Padding(
+              padding: const pw.EdgeInsets.all(5),
+              child: pw.Text(texto),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Future<void> cancelarVenda(Map<String, dynamic> venda) async {
+    final motivoController = TextEditingController();
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancelar venda?'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: motivoController,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Motivo do cancelamento',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Voltar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Cancelar venda'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
+
+    await vendaRepo.cancelarVenda(
+      vendaId: venda['id'].toString(),
+      motivo: motivoController.text,
+    );
+    motivoController.dispose();
+    await carregar();
   }
 
   Future<void> imprimirRecibo(String vendaId) async {
@@ -198,10 +356,90 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
   }
 
   double get totalVendido {
-    return vendas.fold(
+    return vendas.where((v) => (v['status'] ?? 'finalizada') != 'cancelada').fold(
       0,
       (soma, venda) => soma + ((venda['total'] as num?)?.toDouble() ?? 0),
     );
+  }
+
+  int get quantidadeVendasFinalizadas {
+    return vendas
+        .where((v) => (v['status'] ?? 'finalizada') != 'cancelada')
+        .length;
+  }
+
+  double get lucroEstimado {
+    double lucro = 0;
+    for (final item in produtosVendidos) {
+      final produto = item['produtos'] as Map<String, dynamic>? ?? {};
+      final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
+      final precoVenda = ((item['preco_unitario'] as num?)?.toDouble() ?? 0);
+      final precoCusto = ((produto['preco_custo'] as num?)?.toDouble() ?? 0);
+      lucro += (precoVenda - precoCusto) * qtd;
+    }
+    return lucro;
+  }
+
+  List<Map<String, dynamic>> get movimentacoesFiltradas {
+    return movimentacoes.where((mov) {
+      final tipo = mov['tipo']?.toString() ?? '';
+      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+
+      switch (tipoMovimentacaoFiltro) {
+        case TipoMovimentacaoFiltro.todas:
+          return true;
+        case TipoMovimentacaoFiltro.entradas:
+          return entrada;
+        case TipoMovimentacaoFiltro.saidas:
+          return !entrada;
+      }
+    }).toList();
+  }
+
+  double get custoEntradasMovimentacao {
+    double total = 0;
+    for (final mov in movimentacoesFiltradas) {
+      final tipo = mov['tipo']?.toString() ?? '';
+      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+      if (!entrada) continue;
+
+      final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
+      final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
+      final custo = ((produto['preco_custo'] as num?)?.toDouble() ?? 0);
+      total += qtd * custo;
+    }
+    return total;
+  }
+
+  double get valorSaidasMovimentacao {
+    double total = 0;
+    for (final mov in movimentacoesFiltradas) {
+      final tipo = mov['tipo']?.toString() ?? '';
+      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+      if (entrada) continue;
+
+      final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
+      final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
+      final venda = ((produto['preco_venda'] as num?)?.toDouble() ?? 0);
+      total += qtd * venda;
+    }
+    return total;
+  }
+
+  double get lucroEstimadoMovimentacao {
+    double total = 0;
+    for (final mov in movimentacoesFiltradas) {
+      final tipo = mov['tipo']?.toString() ?? '';
+      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+      if (entrada) continue;
+
+      final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
+      final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
+      final venda = ((produto['preco_venda'] as num?)?.toDouble() ?? 0);
+      final custo = ((produto['preco_custo'] as num?)?.toDouble() ?? 0);
+      total += qtd * (venda - custo);
+    }
+    return total;
   }
 
   Map<String, double> get totaisPorPagamento {
@@ -408,12 +646,14 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     if (loading) {
       return const Scaffold(
         appBar: AppTopBar(titulo: 'Relatórios'),
+        bottomNavigationBar: AppBottomNav(),
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       appBar: const AppTopBar(titulo: 'Relatórios'),
+      bottomNavigationBar: const AppBottomNav(),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -421,7 +661,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Período do relatório: $periodoTexto',
+                usarPeriodo
+                    ? 'Período do relatório: $periodoTexto'
+                    : 'Periodo do relatorio: todos os periodos',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -446,9 +688,29 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                     ButtonSegment(value: true, label: Text('Detalhado')),
                   ],
                   selected: {relatorioDetalhado},
+                  showSelectedIcon: false,
                   onSelectionChanged: (value) {
                     setState(() {
                       relatorioDetalhado = value.first;
+                    });
+                  },
+                ),
+                SegmentedButton<TipoRelatorio>(
+                  segments: const [
+                    ButtonSegment(
+                      value: TipoRelatorio.vendas,
+                      label: Text('Vendas'),
+                    ),
+                    ButtonSegment(
+                      value: TipoRelatorio.movimentacoes,
+                      label: Text('Movimentacoes'),
+                    ),
+                  ],
+                  selected: {tipoRelatorio},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (value) {
+                    setState(() {
+                      tipoRelatorio = value.first;
                     });
                   },
                 ),
@@ -462,6 +724,16 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                   icon: const Icon(Icons.today),
                   label: const Text('Hoje'),
                 ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    setState(() {
+                      usarPeriodo = !usarPeriodo;
+                    });
+                    await carregar();
+                  },
+                  icon: Icon(usarPeriodo ? Icons.event_busy : Icons.event),
+                  label: Text(usarPeriodo ? 'Todos os periodos' : 'Usar periodo'),
+                ),
                 ElevatedButton.icon(
                   onPressed: exportarPdf,
                   icon: const Icon(Icons.picture_as_pdf),
@@ -472,48 +744,364 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
 
             const SizedBox(height: 16),
 
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                SizedBox(
-                  width: 280,
-                  child: cardResumo(
-                    titulo: 'Total vendido',
-                    valor: moeda(totalVendido),
-                    icon: Icons.attach_money,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final clienteDropdown = DropdownButtonFormField<String?>(
+                  initialValue: clienteFiltroId,
+                  decoration: const InputDecoration(
+                    labelText: 'Cliente',
+                    border: OutlineInputBorder(),
                   ),
-                ),
-                SizedBox(
-                  width: 280,
-                  child: cardResumo(
-                    titulo: 'Quantidade de vendas',
-                    valor: vendas.length.toString(),
-                    icon: Icons.point_of_sale,
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Todos os clientes'),
+                    ),
+                    ...clientes.map(
+                      (cliente) => DropdownMenuItem<String?>(
+                        value: cliente.id,
+                        child: Text(cliente.nome),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) async {
+                    setState(() {
+                      clienteFiltroId = value;
+                    });
+                    await carregar();
+                  },
+                );
+
+                final produtoDropdown = DropdownButtonFormField<String?>(
+                  initialValue: produtoFiltroId,
+                  decoration: const InputDecoration(
+                    labelText: 'Produto',
+                    border: OutlineInputBorder(),
                   ),
-                ),
-              ],
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Todos os produtos'),
+                    ),
+                    ...produtos.map(
+                      (produto) => DropdownMenuItem<String?>(
+                        value: produto.id,
+                        child: Text('${produto.codigo} - ${produto.descricao}'),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) async {
+                    setState(() {
+                      produtoFiltroId = value;
+                    });
+                    await carregar();
+                  },
+                );
+
+                if (constraints.maxWidth < 720) {
+                  return Column(
+                    children: [
+                      clienteDropdown,
+                      const SizedBox(height: 10),
+                      produtoDropdown,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: clienteDropdown),
+                    const SizedBox(width: 12),
+                    Expanded(child: produtoDropdown),
+                  ],
+                );
+              },
             ),
 
             const SizedBox(height: 16),
 
-            resumoPagamentos(),
+            if (tipoRelatorio == TipoRelatorio.vendas) ...[
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  SizedBox(
+                    width: 280,
+                    child: cardResumo(
+                      titulo: 'Total vendido',
+                      valor: moeda(totalVendido),
+                      icon: Icons.attach_money,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 280,
+                    child: cardResumo(
+                      titulo: 'Quantidade de vendas',
+                      valor: quantidadeVendasFinalizadas.toString(),
+                      icon: Icons.point_of_sale,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 280,
+                    child: cardResumo(
+                      titulo: 'Lucro estimado',
+                      valor: moeda(lucroEstimado),
+                      icon: Icons.trending_up,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              resumoPagamentos(),
+              const SizedBox(height: 16),
+              produtosVendidosCard(),
+              if (relatorioDetalhado) ...[
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Vendas e itens',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                listaVendasDetalhadas(),
+              ],
+            ],
+            if (tipoRelatorio == TipoRelatorio.movimentacoes)
+              relatorioMovimentacoes(),
+          ],
+        ),
+      ),
+    );
+  }
 
-            const SizedBox(height: 16),
+  Widget listaVendasDetalhadas() {
+    if (vendas.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: Text('Nenhuma venda encontrada')),
+      );
+    }
 
-            produtosVendidosCard(),
+    return Column(children: vendas.map(vendaDetalhadaCard).toList());
+  }
 
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Vendas do período',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  Widget vendaDetalhadaCard(Map<String, dynamic> venda) {
+    final cliente = venda['clientes'];
+    final nomeCliente = cliente != null ? cliente['nome'].toString() : 'Sem cliente';
+    final total = ((venda['total'] as num?)?.toDouble() ?? 0);
+    final status = (venda['status'] ?? 'finalizada').toString();
+    final cancelada = status == 'cancelada';
+    final numero = venda['numero']?.toString() ?? venda['id'].toString();
+    final itens = List<Map<String, dynamic>>.from(venda['venda_itens'] ?? []);
+    final data = DateTime.tryParse(venda['data_venda'].toString());
+    final hora = data == null
+        ? ''
+        : '${data.hour.toString().padLeft(2, '0')}:${data.minute.toString().padLeft(2, '0')}';
+
+    return Card(
+      color: cancelada ? Colors.red.shade50 : null,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                cancelada ? Icons.cancel : Icons.receipt_long,
+                color: cancelada ? Colors.red : null,
+              ),
+              title: Text(
+                'Venda $numero - $nomeCliente',
+                style: TextStyle(
+                  color: cancelada ? Colors.red : null,
+                  decoration: cancelada ? TextDecoration.lineThrough : null,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              subtitle: Text(
+                'Horario: $hora - ${cancelada ? 'Cancelada' : 'Finalizada'}',
+              ),
+              trailing: Wrap(
+                spacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    moeda(total),
+                    style: TextStyle(
+                      color: cancelada ? Colors.red : null,
+                      decoration: cancelada ? TextDecoration.lineThrough : null,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Imprimir recibo',
+                    icon: const Icon(Icons.print),
+                    onPressed: () => imprimirRecibo(venda['id'].toString()),
+                  ),
+                  if (!cancelada)
+                    IconButton(
+                      tooltip: 'Cancelar venda',
+                      icon: const Icon(Icons.cancel),
+                      color: Colors.red,
+                      onPressed: () => cancelarVenda(venda),
+                    ),
+                ],
               ),
             ),
+            if (itens.isNotEmpty) const Divider(),
+            ...itens.map((item) {
+              final produto = item['produtos'] as Map<String, dynamic>? ?? {};
+              final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
+              final subtotal = ((item['subtotal'] as num?)?.toDouble() ?? 0);
 
-            const SizedBox(height: 8),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${produto['codigo'] ?? ''} - ${produto['descricao'] ?? 'Produto'}',
+                      ),
+                    ),
+                    Text('${qtd.toStringAsFixed(0)} un.'),
+                    const SizedBox(width: 12),
+                    Text(moeda(subtotal)),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 
-            listaVendas(),
+  Widget relatorioMovimentacoes() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SegmentedButton<TipoMovimentacaoFiltro>(
+            segments: const [
+              ButtonSegment(
+                value: TipoMovimentacaoFiltro.todas,
+                label: Text('Todas'),
+              ),
+              ButtonSegment(
+                value: TipoMovimentacaoFiltro.entradas,
+                label: Text('Entradas'),
+              ),
+              ButtonSegment(
+                value: TipoMovimentacaoFiltro.saidas,
+                label: Text('Saidas'),
+              ),
+            ],
+            selected: {tipoMovimentacaoFiltro},
+            showSelectedIcon: false,
+            onSelectionChanged: (value) {
+              setState(() {
+                tipoMovimentacaoFiltro = value.first;
+              });
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            SizedBox(
+              width: 280,
+              child: cardResumo(
+                titulo: 'Movimentacoes',
+                valor: movimentacoesFiltradas.length.toString(),
+                icon: Icons.swap_vert,
+              ),
+            ),
+            SizedBox(
+              width: 280,
+              child: cardResumo(
+                titulo: 'Custo das entradas',
+                valor: moeda(custoEntradasMovimentacao),
+                icon: Icons.inventory_2,
+              ),
+            ),
+            SizedBox(
+              width: 280,
+              child: cardResumo(
+                titulo: 'Valor das saidas',
+                valor: moeda(valorSaidasMovimentacao),
+                icon: Icons.local_shipping,
+              ),
+            ),
+            SizedBox(
+              width: 280,
+              child: cardResumo(
+                titulo: 'Lucro estimado',
+                valor: moeda(lucroEstimadoMovimentacao),
+                icon: Icons.trending_up,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        movimentacoesCard(),
+      ],
+    );
+  }
+
+  Widget movimentacoesCard() {
+    final lista = movimentacoesFiltradas;
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Movimentacoes de estoque',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            if (lista.isEmpty)
+              const Text('Nenhuma movimentacao no filtro selecionado'),
+            ...lista.map((mov) {
+              final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
+              final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
+              final tipo = mov['tipo']?.toString() ?? '';
+              final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      entrada ? Icons.call_received : Icons.call_made,
+                      color: entrada ? Colors.green : Colors.red,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${produto['descricao'] ?? 'Produto'} - ${mov['observacao'] ?? tipo}',
+                      ),
+                    ),
+                    Text(
+                      '${entrada ? '+' : '-'}${qtd.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        color: entrada ? Colors.green.shade700 : Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -720,7 +1308,7 @@ class _ConfigReciboDialogState extends State<ConfigReciboDialog> {
                     child: Image.network(
                       logoUrl.text.trim(),
                       height: 90,
-                      errorBuilder: (_, __, ___) {
+                      errorBuilder: (context, error, stackTrace) {
                         return const Text('Não foi possível carregar a logo');
                       },
                     ),

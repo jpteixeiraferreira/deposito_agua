@@ -7,6 +7,7 @@ import '../widgets/produto_form_dialog.dart';
 import '../../../core/widgets/app_top_bar.dart';
 
 enum TipoOrdenacao { codigo, descricao, estoque, venda }
+enum FiltroStatusProduto { ativos, todos, inativos }
 
 class ProdutosPage extends StatefulWidget {
   const ProdutosPage({super.key});
@@ -25,7 +26,7 @@ class _ProdutosPageState extends State<ProdutosPage> {
   String busca = '';
 
   bool crescente = true;
-  bool exibirInativos = false;
+  FiltroStatusProduto filtroStatus = FiltroStatusProduto.ativos;
 
   TipoOrdenacao ordenarPor = TipoOrdenacao.codigo;
 
@@ -46,6 +47,89 @@ class _ProdutosPageState extends State<ProdutosPage> {
     if (resultado == true) {
       setState(() {});
     }
+  }
+
+  bool get incluirInativos => filtroStatus == FiltroStatusProduto.todos;
+  bool get somenteInativos => filtroStatus == FiltroStatusProduto.inativos;
+
+  Future<void> excluirOuInativar(Produto produto) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Excluir produto?'),
+        content: Text(
+          'Vamos tentar excluir ${produto.descricao}. Se ele ja estiver vinculado a vendas ou movimentacoes, o historico sera preservado e voce podera inativa-lo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
+
+    try {
+      final excluiu = await repository.excluir(produto.id);
+      if (!mounted) return;
+
+      if (excluiu) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Produto excluido com sucesso')),
+        );
+        setState(() {});
+        return;
+      }
+
+      final inativar = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Nao foi possivel excluir'),
+          content: const Text(
+            'Este produto ja possui relacionamento no banco de dados, como vendas ou movimentacoes de estoque. Para preservar o historico, ele nao pode ser excluido. Inative o produto para remove-lo das novas vendas.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Manter ativo'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Inativar produto'),
+            ),
+          ],
+        ),
+      );
+
+      if (inativar == true) {
+        await repository.inativar(produto.id);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Produto inativado com sucesso')),
+        );
+        setState(() {});
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nao foi possivel excluir o produto')),
+      );
+    }
+  }
+
+  Future<void> abrirMovimentacao(Produto produto) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => MovimentacaoEstoqueDialog(produto: produto),
+    );
+
+    if (ok == true) setState(() {});
   }
 
   String normalizar(String texto) {
@@ -212,18 +296,35 @@ class _ProdutosPageState extends State<ProdutosPage> {
                   ),
                 ),
                 DataCell(
-                  IconButton(
-                    icon: const Icon(Icons.edit),
-                    onPressed: () async {
-                      final ok = await showDialog(
-                        context: context,
-                        builder: (_) => ProdutoFormDialog(produto: p),
-                      );
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Editar',
+                        icon: const Icon(Icons.edit),
+                        onPressed: () async {
+                          final ok = await showDialog(
+                            context: context,
+                            builder: (_) => ProdutoFormDialog(produto: p),
+                          );
 
-                      if (ok == true) {
-                        setState(() {});
-                      }
-                    },
+                          if (ok == true) {
+                            setState(() {});
+                          }
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Movimentar estoque',
+                        icon: const Icon(Icons.swap_vert),
+                        onPressed: () => abrirMovimentacao(p),
+                      ),
+                      IconButton(
+                        tooltip: 'Excluir',
+                        icon: const Icon(Icons.delete_outline),
+                        color: Colors.red,
+                        onPressed: () => excluirOuInativar(p),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -253,7 +354,28 @@ class _ProdutosPageState extends State<ProdutosPage> {
             subtitle: Text(
               'Código: ${p.codigo}\nEstoque: ${p.estoqueAtual.toStringAsFixed(0)}',
             ),
-            trailing: Text('R\$ ${p.precoVenda.toStringAsFixed(2)}'),
+            trailing: PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'editar') {
+                  showDialog(
+                    context: context,
+                    builder: (_) => ProdutoFormDialog(produto: p),
+                  ).then((ok) {
+                    if (ok == true) setState(() {});
+                  });
+                }
+                if (value == 'movimentar') abrirMovimentacao(p);
+                if (value == 'excluir') excluirOuInativar(p);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'editar', child: Text('Editar')),
+                PopupMenuItem(
+                  value: 'movimentar',
+                  child: Text('Movimentar estoque'),
+                ),
+                PopupMenuItem(value: 'excluir', child: Text('Excluir')),
+              ],
+            ),
           ),
         );
       },
@@ -268,23 +390,34 @@ class _ProdutosPageState extends State<ProdutosPage> {
 
     return Scaffold(
       appBar: const AppTopBar(titulo: 'Produtos'),
+      bottomNavigationBar: const AppBottomNav(),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             LayoutBuilder(
               builder: (context, constraints) {
-                final filtroInativos = SizedBox(
-                  height: 56,
-                  child: FilterChip(
-                    label: const Text('Exibir inativos'),
-                    selected: exibirInativos,
-                    onSelected: (value) {
-                      setState(() {
-                        exibirInativos = value;
-                      });
-                    },
-                  ),
+                final filtroStatusWidget = SegmentedButton<FiltroStatusProduto>(
+                  segments: const [
+                    ButtonSegment(
+                      value: FiltroStatusProduto.ativos,
+                      label: Text('Ativos'),
+                    ),
+                    ButtonSegment(
+                      value: FiltroStatusProduto.todos,
+                      label: Text('Todos'),
+                    ),
+                    ButtonSegment(
+                      value: FiltroStatusProduto.inativos,
+                      label: Text('Inativos'),
+                    ),
+                  ],
+                  selected: {filtroStatus},
+                  onSelectionChanged: (value) {
+                    setState(() {
+                      filtroStatus = value.first;
+                    });
+                  },
                 );
 
                 final campoBusca = TextField(
@@ -309,7 +442,10 @@ class _ProdutosPageState extends State<ProdutosPage> {
                     children: [
                       campoBusca,
                       const SizedBox(height: 8),
-                      filtroInativos,
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: filtroStatusWidget,
+                      ),
                     ],
                   );
                 }
@@ -319,7 +455,7 @@ class _ProdutosPageState extends State<ProdutosPage> {
                   children: [
                     Expanded(child: campoBusca),
                     const SizedBox(width: 12),
-                    filtroInativos,
+                    filtroStatusWidget,
                   ],
                 );
               },
@@ -328,7 +464,8 @@ class _ProdutosPageState extends State<ProdutosPage> {
             Expanded(
               child: FutureBuilder<List<Produto>>(
                 future: repository.buscarTodos(
-                  incluirInativos: exibirInativos,
+                  incluirInativos: incluirInativos,
+                  somenteInativos: somenteInativos,
                 ),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
@@ -355,6 +492,148 @@ class _ProdutosPageState extends State<ProdutosPage> {
         icon: const Icon(Icons.add),
         label: const Text('Novo Produto'),
       ),
+    );
+  }
+}
+
+class MovimentacaoEstoqueDialog extends StatefulWidget {
+  final Produto produto;
+
+  const MovimentacaoEstoqueDialog({super.key, required this.produto});
+
+  @override
+  State<MovimentacaoEstoqueDialog> createState() =>
+      _MovimentacaoEstoqueDialogState();
+}
+
+class _MovimentacaoEstoqueDialogState
+    extends State<MovimentacaoEstoqueDialog> {
+  final repository = ProdutoRepository();
+  final quantidadeController = TextEditingController();
+  final observacaoController = TextEditingController();
+  final formKey = GlobalKey<FormState>();
+
+  String tipo = 'entrada';
+  bool loading = false;
+
+  @override
+  void dispose() {
+    quantidadeController.dispose();
+    observacaoController.dispose();
+    super.dispose();
+  }
+
+  double parseNumero(String valor) {
+    return double.tryParse(valor.replaceAll(',', '.').trim()) ?? 0;
+  }
+
+  Future<void> salvar() async {
+    if (!formKey.currentState!.validate()) return;
+
+    try {
+      setState(() => loading = true);
+
+      await repository.movimentarEstoque(
+        produto: widget.produto,
+        tipo: tipo,
+        quantidade: parseNumero(quantidadeController.text),
+        observacao: observacaoController.text,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nao foi possivel registrar a movimentacao'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final estoqueAtual = widget.produto.estoqueAtual.toStringAsFixed(0);
+
+    return AlertDialog(
+      title: const Text('Movimentar estoque'),
+      content: SizedBox(
+        width: 420,
+        child: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.produto.descricao,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text('Estoque atual: $estoqueAtual'),
+              const SizedBox(height: 16),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'entrada', label: Text('Entrada')),
+                  ButtonSegment(value: 'saida', label: Text('Saida')),
+                ],
+                selected: {tipo},
+                onSelectionChanged: (value) {
+                  setState(() {
+                    tipo = value.first;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: quantidadeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Quantidade',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final quantidade = parseNumero(value ?? '');
+                  if (quantidade <= 0) return 'Informe uma quantidade valida';
+                  if (tipo == 'saida' && quantidade > widget.produto.estoqueAtual) {
+                    return 'A saida nao pode deixar estoque negativo';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: observacaoController,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Observacao',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: loading ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: loading ? null : salvar,
+          child: loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Salvar'),
+        ),
+      ],
     );
   }
 }

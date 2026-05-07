@@ -38,16 +38,20 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final desktop = MediaQuery.of(context).size.width > 700;
+    final largura = MediaQuery.of(context).size.width;
+    final desktop = largura > 700;
+    final colunas = largura < 380 ? 1 : (desktop ? 4 : 2);
 
     return Scaffold(
       appBar: const AppTopBar(titulo: 'Depósito de Água'),
+      bottomNavigationBar: const AppBottomNav(),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: GridView.count(
-          crossAxisCount: desktop ? 4 : 2,
+          crossAxisCount: colunas,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
+          childAspectRatio: desktop ? 1.2 : 1.55,
           children: [
             cardMenu(
               context: context,

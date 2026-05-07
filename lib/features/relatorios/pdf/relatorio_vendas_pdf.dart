@@ -16,7 +16,10 @@ class RelatorioVendasPdf {
     final fonteBase = await PdfGoogleFonts.openSansRegular();
     final fonteNegrito = await PdfGoogleFonts.openSansBold();
     final doc = pw.Document();
-    final total = vendas.fold<double>(
+    final vendasFinalizadas = vendas
+        .where((venda) => (venda['status'] ?? 'finalizada') != 'cancelada')
+        .toList();
+    final total = vendasFinalizadas.fold<double>(
       0,
       (soma, venda) => soma + ((venda['total'] as num?)?.toDouble() ?? 0),
     );
@@ -28,17 +31,20 @@ class RelatorioVendasPdf {
         margin: const pw.EdgeInsets.all(24),
         build: (context) => [
           pw.Text(
-            'Relatório de vendas',
+            'Relatorio de vendas',
             style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 4),
-          pw.Text('Período: ${_data(inicio)} até ${_data(fim)}'),
+          pw.Text('Periodo: ${_data(inicio)} ate ${_data(fim)}'),
           pw.SizedBox(height: 16),
           pw.Row(
             children: [
               _cardResumo('Total vendido', _moeda(total)),
               pw.SizedBox(width: 12),
-              _cardResumo('Quantidade de vendas', vendas.length.toString()),
+              _cardResumo(
+                'Quantidade de vendas',
+                vendasFinalizadas.length.toString(),
+              ),
             ],
           ),
           pw.SizedBox(height: 16),
@@ -58,7 +64,7 @@ class RelatorioVendasPdf {
           if (detalhado) ...[
             pw.SizedBox(height: 16),
             pw.Text(
-              'Vendas',
+              'Vendas e itens',
               style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 6),
@@ -92,19 +98,21 @@ class RelatorioVendasPdf {
   }
 
   static pw.Widget _tabelaPagamentos(Map<String, double> totais) {
-    if (totais.isEmpty) return pw.Text('Nenhum pagamento no período');
+    if (totais.isEmpty) return pw.Text('Nenhum pagamento no periodo');
 
     return pw.Table(
       border: pw.TableBorder.all(width: 0.5),
       children: [
         _linha(['Forma', 'Valor'], header: true),
-        ...totais.entries.map((e) => _linha([e.key.toUpperCase(), _moeda(e.value)])),
+        ...totais.entries.map(
+          (e) => _linha([e.key.toUpperCase(), _moeda(e.value)]),
+        ),
       ],
     );
   }
 
   static pw.Widget _tabelaProdutos(Map<String, Map<String, double>> resumo) {
-    if (resumo.isEmpty) return pw.Text('Nenhum produto vendido no período');
+    if (resumo.isEmpty) return pw.Text('Nenhum produto vendido no periodo');
 
     final itens = resumo.entries.toList()
       ..sort(
@@ -127,27 +135,42 @@ class RelatorioVendasPdf {
   }
 
   static pw.Widget _tabelaVendas(List<Map<String, dynamic>> vendas) {
-    if (vendas.isEmpty) return pw.Text('Nenhuma venda no período');
+    if (vendas.isEmpty) return pw.Text('Nenhuma venda no periodo');
 
     return pw.Table(
       border: pw.TableBorder.all(width: 0.5),
       columnWidths: const {
-        0: pw.FixedColumnWidth(80),
-        1: pw.FlexColumnWidth(),
-        2: pw.FixedColumnWidth(90),
+        0: pw.FixedColumnWidth(55),
+        1: pw.FixedColumnWidth(55),
+        2: pw.FlexColumnWidth(),
+        3: pw.FlexColumnWidth(),
+        4: pw.FixedColumnWidth(80),
       },
       children: [
-        _linha(['Horário', 'Cliente', 'Total'], header: true),
+        _linha(['Venda', 'Hora', 'Cliente', 'Itens', 'Total'], header: true),
         ...vendas.map((venda) {
           final data = DateTime.tryParse(venda['data_venda'].toString());
           final cliente = venda['clientes'] as Map<String, dynamic>?;
           final total = ((venda['total'] as num?)?.toDouble() ?? 0);
+          final cancelada =
+              (venda['status'] ?? 'finalizada').toString() == 'cancelada';
+          final itens = List<Map<String, dynamic>>.from(
+            venda['venda_itens'] ?? [],
+          );
+          final itensTexto = itens.map((item) {
+            final produto = item['produtos'] as Map<String, dynamic>? ?? {};
+            final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
+            return '${qtd.toStringAsFixed(0)}x ${produto['descricao'] ?? 'Produto'}';
+          }).join('\n');
+
           return _linha([
+            (venda['numero'] ?? venda['id'] ?? '').toString(),
             data == null
                 ? ''
                 : '${data.hour.toString().padLeft(2, '0')}:${data.minute.toString().padLeft(2, '0')}',
             cliente?['nome']?.toString() ?? 'Sem cliente',
-            _moeda(total),
+            cancelada ? 'CANCELADA\n$itensTexto' : itensTexto,
+            cancelada ? 'CANCELADA' : _moeda(total),
           ]);
         }),
       ],

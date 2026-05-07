@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/empresa_context.dart';
 import '../models/config_recibo_model.dart';
 
 class ConfigReciboRepository {
@@ -9,10 +10,11 @@ class ConfigReciboRepository {
 
   Future<ConfigRecibo> buscar() async {
     try {
+      final empresaId = await EmpresaContext.instance.empresaId();
       final response = await supabase
           .from('configuracoes_recibo')
           .select()
-          .eq('id', 1)
+          .eq('empresa_id', empresaId)
           .maybeSingle();
 
       if (response == null) {
@@ -26,18 +28,23 @@ class ConfigReciboRepository {
   }
 
   Future<void> salvar(ConfigRecibo config) async {
+    final empresaId = await EmpresaContext.instance.empresaId();
+    final map = config.toMap()..remove('id');
+    map['empresa_id'] = empresaId;
+
     await supabase
         .from('configuracoes_recibo')
-        .upsert(config.toMap(), onConflict: 'id');
+        .upsert(map, onConflict: 'empresa_id');
   }
 
   Future<String> enviarLogo({
     required Uint8List bytes,
     required String nomeArquivo,
   }) async {
+    final empresaId = await EmpresaContext.instance.empresaId();
     final extensao = nomeArquivo.split('.').last.toLowerCase();
     final path =
-        'logo-${DateTime.now().millisecondsSinceEpoch}.$extensao';
+        '$empresaId/logo-${DateTime.now().millisecondsSinceEpoch}.$extensao';
 
     await supabase.storage.from('recibos').uploadBinary(
           path,

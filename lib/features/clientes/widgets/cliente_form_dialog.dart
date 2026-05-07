@@ -33,6 +33,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
     filter: {"#": RegExp(r'[0-9]')},
   );
   bool loading = false;
+  bool ativo = true;
 
   @override
   void initState() {
@@ -48,6 +49,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
       referencia.text = widget.cliente!.referencia;
 
       cpfCnpj.text = widget.cliente!.cpfCnpj;
+      ativo = widget.cliente!.ativo;
     }
   }
 
@@ -85,6 +87,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
           endereco: endereco.text.trim(),
           referencia: referencia.text.trim(),
           cpfCnpj: cpfCnpj.text.trim(),
+          ativo: ativo,
         );
       }
 
@@ -126,6 +129,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
         validator: validator,
         keyboardType: tipo,
         inputFormatters: inputFormatters,
+        onChanged: onChanged,
         decoration: deco(label),
       ),
     );
@@ -173,6 +177,24 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
                 campo(label: 'Referência', controller: referencia),
 
                 campo(label: 'CPF/CNPJ', controller: cpfCnpj),
+
+                if (widget.cliente != null)
+                  CheckboxListTile(
+                    value: ativo,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Cliente ativo'),
+                    subtitle: Text(
+                      ativo
+                          ? 'Disponivel para novas vendas'
+                          : 'Oculto nas vendas e filtros padrao',
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (value) {
+                      setState(() {
+                        ativo = value ?? true;
+                      });
+                    },
+                  ),
               ],
             ),
           ),
