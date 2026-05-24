@@ -190,13 +190,12 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
           pw.Text(usarPeriodo ? 'Periodo: $periodoTexto' : 'Todos os periodos'),
           pw.SizedBox(height: 16),
           pw.Text('Custo das entradas: ${moeda(custoEntradasMovimentacao)}'),
-          pw.Text('Valor das saidas: ${moeda(valorSaidasMovimentacao)}'),
-          pw.Text('Lucro estimado: ${moeda(lucroEstimadoMovimentacao)}'),
+          pw.Text('Custo das saidas: ${moeda(custoSaidasMovimentacao)}'),
           pw.SizedBox(height: 16),
           pw.Table(
             border: pw.TableBorder.all(width: 0.5),
             children: [
-              _linhaPdf(['Tipo', 'Produto', 'Qtd', 'Observacao']),
+              _linhaPdf(['Tipo', 'Produto', 'Qtd', 'Custo', 'Observacao']),
               ...lista.map((mov) {
                 final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
                 final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
@@ -204,7 +203,8 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                   (mov['tipo'] ?? '').toString(),
                   (produto['descricao'] ?? 'Produto').toString(),
                   qtd.toStringAsFixed(0),
-                  (mov['observacao'] ?? '').toString(),
+                  moeda(custoMovimentacao(mov)),
+                  descricaoMovimentacao(mov),
                 ]);
               }),
             ],
@@ -383,7 +383,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
   List<Map<String, dynamic>> get movimentacoesFiltradas {
     return movimentacoes.where((mov) {
       final tipo = mov['tipo']?.toString() ?? '';
-      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+      if (tipo == 'venda' || tipo == 'cancelamento_venda') return false;
+
+      final entrada = tipo == 'entrada';
 
       switch (tipoMovimentacaoFiltro) {
         case TipoMovimentacaoFiltro.todas:
@@ -400,46 +402,44 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     double total = 0;
     for (final mov in movimentacoesFiltradas) {
       final tipo = mov['tipo']?.toString() ?? '';
-      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+      final entrada = tipo == 'entrada';
       if (!entrada) continue;
 
-      final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
-      final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
-      final custo = ((produto['preco_custo'] as num?)?.toDouble() ?? 0);
-      total += qtd * custo;
+      total += custoMovimentacao(mov);
     }
     return total;
   }
 
-  double get valorSaidasMovimentacao {
+  double get custoSaidasMovimentacao {
     double total = 0;
     for (final mov in movimentacoesFiltradas) {
       final tipo = mov['tipo']?.toString() ?? '';
-      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+      final entrada = tipo == 'entrada';
       if (entrada) continue;
 
-      final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
-      final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
-      final venda = ((produto['preco_venda'] as num?)?.toDouble() ?? 0);
-      total += qtd * venda;
+      total += custoMovimentacao(mov);
     }
     return total;
   }
 
-  double get lucroEstimadoMovimentacao {
-    double total = 0;
-    for (final mov in movimentacoesFiltradas) {
-      final tipo = mov['tipo']?.toString() ?? '';
-      final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
-      if (entrada) continue;
+  double custoMovimentacao(Map<String, dynamic> mov) {
+    final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
+    final custoUnitario = (mov['custo_unitario'] as num?)?.toDouble();
+    if (custoUnitario != null) return qtd * custoUnitario;
 
-      final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
-      final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
-      final venda = ((produto['preco_venda'] as num?)?.toDouble() ?? 0);
-      final custo = ((produto['preco_custo'] as num?)?.toDouble() ?? 0);
-      total += qtd * (venda - custo);
-    }
-    return total;
+    final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
+    final custo = ((produto['preco_custo'] as num?)?.toDouble() ?? 0);
+    return qtd * custo;
+  }
+
+  String descricaoMovimentacao(Map<String, dynamic> mov) {
+    final observacao = mov['observacao']?.toString().trim() ?? '';
+    if (observacao.isNotEmpty) return observacao;
+
+    final motivo = mov['motivo']?.toString().trim() ?? '';
+    if (motivo.isNotEmpty) return motivo;
+
+    return mov['tipo']?.toString() ?? 'Movimentacao';
   }
 
   Map<String, double> get totaisPorPagamento {
@@ -1032,17 +1032,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
             SizedBox(
               width: 280,
               child: cardResumo(
-                titulo: 'Valor das saidas',
-                valor: moeda(valorSaidasMovimentacao),
+                titulo: 'Custo das saidas',
+                valor: moeda(custoSaidasMovimentacao),
                 icon: Icons.local_shipping,
-              ),
-            ),
-            SizedBox(
-              width: 280,
-              child: cardResumo(
-                titulo: 'Lucro estimado',
-                valor: moeda(lucroEstimadoMovimentacao),
-                icon: Icons.trending_up,
               ),
             ),
           ],
@@ -1074,7 +1066,8 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
               final produto = mov['produtos'] as Map<String, dynamic>? ?? {};
               final qtd = ((mov['quantidade'] as num?)?.toDouble() ?? 0);
               final tipo = mov['tipo']?.toString() ?? '';
-              final entrada = tipo == 'entrada' || tipo == 'cancelamento_venda';
+              final entrada = tipo == 'entrada';
+              final custo = custoMovimentacao(mov);
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -1088,9 +1081,12 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${produto['descricao'] ?? 'Produto'} - ${mov['observacao'] ?? tipo}',
+                        '${produto['descricao'] ?? 'Produto'} - ${descricaoMovimentacao(mov)}',
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Text(moeda(custo)),
+                    const SizedBox(width: 12),
                     Text(
                       '${entrada ? '+' : '-'}${qtd.toStringAsFixed(0)}',
                       style: TextStyle(

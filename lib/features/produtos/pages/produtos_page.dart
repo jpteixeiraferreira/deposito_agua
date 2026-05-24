@@ -514,7 +514,38 @@ class _MovimentacaoEstoqueDialogState
   final formKey = GlobalKey<FormState>();
 
   String tipo = 'entrada';
+  String motivo = 'entrada_manual';
   bool loading = false;
+
+  List<DropdownMenuItem<String>> get motivosDisponiveis {
+    final motivos = tipo == 'entrada'
+        ? const [
+            MapEntry('entrada_manual', 'Entrada manual'),
+            MapEntry('ajuste_entrada', 'Ajuste de entrada'),
+          ]
+        : const [
+            MapEntry('avaria', 'Avaria'),
+            MapEntry('ajuste_saida', 'Ajuste de saida'),
+            MapEntry('perda', 'Perda'),
+            MapEntry('uso_interno', 'Uso interno'),
+          ];
+
+    return motivos
+        .map(
+          (motivo) => DropdownMenuItem<String>(
+            value: motivo.key,
+            child: Text(motivo.value),
+          ),
+        )
+        .toList();
+  }
+
+  void alterarTipo(String novoTipo) {
+    setState(() {
+      tipo = novoTipo;
+      motivo = novoTipo == 'entrada' ? 'entrada_manual' : 'avaria';
+    });
+  }
 
   @override
   void dispose() {
@@ -537,6 +568,7 @@ class _MovimentacaoEstoqueDialogState
         produto: widget.produto,
         tipo: tipo,
         quantidade: parseNumero(quantidadeController.text),
+        motivo: motivo,
         observacao: observacaoController.text,
       );
 
@@ -564,57 +596,73 @@ class _MovimentacaoEstoqueDialogState
         width: 420,
         child: Form(
           key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.produto.descricao,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text('Estoque atual: $estoqueAtual'),
-              const SizedBox(height: 16),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'entrada', label: Text('Entrada')),
-                  ButtonSegment(value: 'saida', label: Text('Saida')),
-                ],
-                selected: {tipo},
-                onSelectionChanged: (value) {
-                  setState(() {
-                    tipo = value.first;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: quantidadeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Quantidade',
-                  border: OutlineInputBorder(),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.produto.descricao,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                validator: (value) {
-                  final quantidade = parseNumero(value ?? '');
-                  if (quantidade <= 0) return 'Informe uma quantidade valida';
-                  if (tipo == 'saida' && quantidade > widget.produto.estoqueAtual) {
-                    return 'A saida nao pode deixar estoque negativo';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: observacaoController,
-                minLines: 2,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Observacao',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 4),
+                Text('Estoque atual: $estoqueAtual'),
+                const SizedBox(height: 16),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'entrada', label: Text('Entrada')),
+                    ButtonSegment(value: 'saida', label: Text('Saida')),
+                  ],
+                  selected: {tipo},
+                  onSelectionChanged: (value) {
+                    alterarTipo(value.first);
+                  },
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: motivo,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: motivosDisponiveis,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      motivo = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: quantidadeController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantidade',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    final quantidade = parseNumero(value ?? '');
+                    if (quantidade <= 0) return 'Informe uma quantidade valida';
+                    if (tipo == 'saida' &&
+                        quantidade > widget.produto.estoqueAtual) {
+                      return 'A saida nao pode deixar estoque negativo';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: observacaoController,
+                  minLines: 2,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Observacao complementar',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

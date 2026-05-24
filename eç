@@ -1,0 +1,17 @@
+warning: in the working copy of 'linux/flutter/generated_plugin_registrant.cc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'linux/flutter/generated_plugins.cmake', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'macos/Flutter/GeneratedPluginRegistrant.swift', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'windows/flutter/generated_plugin_registrant.cc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'windows/flutter/generated_plugins.cmake', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/lib/features/relatorios/repositories/relatorio_repository.dart b/lib/features/relatorios/repositories/relatorio_repository.dart[m
+[1mindex df5be82..70bc9bf 100644[m
+[1m--- a/lib/features/relatorios/repositories/relatorio_repository.dart[m
+[1m+++ b/lib/features/relatorios/repositories/relatorio_repository.dart[m
+[36m@@ -86,6 +86,5 @@[m [mclass RelatorioRepository {[m
+ [m
+   Future<List<Map<String, dynamic>>> buscarProdutosVendidosDoDia() async {[m
+     final intervalo = intervaloHoje();[m
+[31m-    return buscarProdutosVendidos(inicio: intervalo.inicio, fim: intervalo.fim);[m
+[31m-  }[m
+[32m+[m[32m    return buscarProdutosVendidos(inicio: intervalo.inicio, fim: intervalo.f  }[m
+ }[m

@@ -144,8 +144,41 @@ class RelatorioRepository {
     DateTime? fim,
     String? produtoId,
   }) async {
-    final empresaId = await EmpresaContext.instance.empresaId();
-    var query = supabase.from('movimentacoes_estoque').select('''
+    Future<List<Map<String, dynamic>>> buscarComSelect(String select) async {
+      final empresaId = await EmpresaContext.instance.empresaId();
+      var query = supabase.from('movimentacoes_estoque').select(select);
+
+      query = query.eq('empresa_id', empresaId);
+      query = _filtroPeriodo(
+        query,
+        inicio: inicio,
+        fim: fim,
+        coluna: 'criado_em',
+      );
+      if (produtoId != null) query = query.eq('produto_id', produtoId);
+
+      final response = await query.order('criado_em', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    }
+
+    const selectComAuditoria = '''
+      id,
+      tipo,
+      motivo,
+      quantidade,
+      custo_unitario,
+      observacao,
+      criado_em,
+      produtos:produto_id (
+        id,
+        codigo,
+        descricao,
+        preco_custo,
+        preco_venda
+      )
+    ''';
+
+    const selectLegado = '''
       id,
       tipo,
       quantidade,
@@ -158,14 +191,13 @@ class RelatorioRepository {
         preco_custo,
         preco_venda
       )
-    ''');
+    ''';
 
-    query = query.eq('empresa_id', empresaId);
-    query = _filtroPeriodo(query, inicio: inicio, fim: fim, coluna: 'criado_em');
-    if (produtoId != null) query = query.eq('produto_id', produtoId);
-
-    final response = await query.order('criado_em', ascending: false);
-    return List<Map<String, dynamic>>.from(response);
+    try {
+      return buscarComSelect(selectComAuditoria);
+    } on PostgrestException {
+      return buscarComSelect(selectLegado);
+    }
   }
 
   Future<List<Map<String, dynamic>>> buscarVendasDoDia() async {

@@ -130,6 +130,7 @@ class ProdutoRepository {
     required Produto produto,
     required String tipo,
     required double quantidade,
+    required String motivo,
     required String observacao,
   }) async {
     final empresaId = await EmpresaContext.instance.empresaId();
@@ -146,15 +147,47 @@ class ProdutoRepository {
         .eq('empresa_id', empresaId)
         .eq('id', produto.id);
 
-    await supabase.from('movimentacoes_estoque').insert({
+    final motivoDescricao = _descricaoMotivoMovimentacao(motivo);
+    final observacaoFinal = observacao.trim().isEmpty
+        ? motivoDescricao
+        : '$motivoDescricao - ${observacao.trim()}';
+
+    final dadosMovimentacao = {
       'empresa_id': empresaId,
       'produto_id': produto.id,
       'tipo': tipo,
       'quantidade': quantidade,
-      'observacao': observacao.trim().isEmpty
-          ? 'Movimentacao manual'
-          : observacao.trim(),
-    });
+      'observacao': observacaoFinal,
+    };
+
+    try {
+      await supabase.from('movimentacoes_estoque').insert({
+        ...dadosMovimentacao,
+        'motivo': motivo,
+        'custo_unitario': produto.precoCusto,
+      });
+    } on PostgrestException {
+      await supabase.from('movimentacoes_estoque').insert(dadosMovimentacao);
+    }
+  }
+
+  String _descricaoMotivoMovimentacao(String motivo) {
+    switch (motivo) {
+      case 'entrada_manual':
+        return 'Entrada manual';
+      case 'ajuste_entrada':
+        return 'Ajuste de entrada';
+      case 'avaria':
+        return 'Avaria';
+      case 'ajuste_saida':
+        return 'Ajuste de saida';
+      case 'perda':
+        return 'Perda';
+      case 'uso_interno':
+        return 'Uso interno';
+      default:
+        return 'Movimentacao manual';
+    }
   }
 
   void _validarPrecos({
