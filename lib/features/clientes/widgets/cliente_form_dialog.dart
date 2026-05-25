@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../../core/telefone_utils.dart';
 import '../models/cliente_model.dart';
 import '../repositories/cliente_repository.dart';
-import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
-import 'package:flutter/services.dart';
 
 class ClienteFormDialog extends StatefulWidget {
   final Cliente? cliente;
@@ -28,10 +29,6 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
 
   final cpfCnpj = TextEditingController();
 
-  final telefoneMask = MaskTextInputFormatter(
-    mask: '(##) #####-####',
-    filter: {"#": RegExp(r'[0-9]')},
-  );
   bool loading = false;
   bool ativo = true;
 
@@ -42,7 +39,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
     if (widget.cliente != null) {
       nome.text = widget.cliente!.nome;
 
-      telefone.text = widget.cliente!.telefone;
+      telefone.text = formatarTelefone(widget.cliente!.telefone);
 
       endereco.text = widget.cliente!.endereco;
 
@@ -50,16 +47,6 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
 
       cpfCnpj.text = widget.cliente!.cpfCnpj;
       ativo = widget.cliente!.ativo;
-    }
-  }
-
-  void atualizarMascaraTelefone(String valor) {
-    final numeros = valor.replaceAll(RegExp(r'[^0-9]'), '');
-
-    if (numeros.length <= 10) {
-      telefoneMask.updateMask(mask: '(##) ####-####');
-    } else {
-      telefoneMask.updateMask(mask: '(##) #####-####');
     }
   }
 
@@ -74,7 +61,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
       if (widget.cliente == null) {
         await repo.inserir(
           nome: nome.text.trim(),
-          telefone: telefone.text.trim(),
+          telefone: apenasNumerosTelefone(telefone.text),
           endereco: endereco.text.trim(),
           referencia: referencia.text.trim(),
           cpfCnpj: cpfCnpj.text.trim(),
@@ -83,7 +70,7 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
         await repo.atualizar(
           id: widget.cliente!.id,
           nome: nome.text.trim(),
-          telefone: telefone.text.trim(),
+          telefone: apenasNumerosTelefone(telefone.text),
           endereco: endereco.text.trim(),
           referencia: referencia.text.trim(),
           cpfCnpj: cpfCnpj.text.trim(),
@@ -162,11 +149,13 @@ class _ClienteFormDialogState extends State<ClienteFormDialog> {
                   label: 'Telefone',
                   controller: telefone,
                   tipo: TextInputType.phone,
-                  inputFormatters: [telefoneMask],
-                  onChanged: atualizarMascaraTelefone,
+                  inputFormatters: const [TelefoneInputFormatter()],
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) {
                       return 'Informe o telefone';
+                    }
+                    if (!telefoneBrasileiroValido(v)) {
+                      return 'Informe DDD + 8 ou 9 digitos';
                     }
                     return null;
                   },

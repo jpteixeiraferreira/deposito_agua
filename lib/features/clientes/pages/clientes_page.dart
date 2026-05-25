@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/telefone_utils.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../models/cliente_model.dart';
 import '../repositories/cliente_repository.dart';
@@ -118,24 +119,6 @@ class _ClientesPageState extends State<ClientesPage> {
 
   bool get incluirInativos => filtroStatus == FiltroStatusCliente.todos;
   bool get somenteInativos => filtroStatus == FiltroStatusCliente.inativos;
-
-  String formatarTelefone(String valor) {
-    final numeros = valor.replaceAll(RegExp(r'[^0-9]'), '');
-
-    if (numeros.length == 10) {
-      return '(${numeros.substring(0, 2)}) '
-          '${numeros.substring(2, 6)}-'
-          '${numeros.substring(6)}';
-    }
-
-    if (numeros.length == 11) {
-      return '(${numeros.substring(0, 2)}) '
-          '${numeros.substring(2, 7)}-'
-          '${numeros.substring(7)}';
-    }
-
-    return valor;
-  }
 
   String formatarCpfCnpj(String valor) {
     final numeros = valor.replaceAll(RegExp(r'[^0-9]'), '');
@@ -316,7 +299,8 @@ class _ClientesPageState extends State<ClientesPage> {
             });
           },
           decoration: InputDecoration(
-            hintText: 'Buscar por nome, telefone, CPF, endereco ou referencia...',
+            hintText:
+                'Buscar por nome, telefone, CPF, endereco ou referencia...',
             prefixIcon: const Icon(Icons.search),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
@@ -324,8 +308,14 @@ class _ClientesPageState extends State<ClientesPage> {
 
         final filtro = SegmentedButton<FiltroStatusCliente>(
           segments: const [
-            ButtonSegment(value: FiltroStatusCliente.ativos, label: Text('Ativos')),
-            ButtonSegment(value: FiltroStatusCliente.todos, label: Text('Todos')),
+            ButtonSegment(
+              value: FiltroStatusCliente.ativos,
+              label: Text('Ativos'),
+            ),
+            ButtonSegment(
+              value: FiltroStatusCliente.todos,
+              label: Text('Todos'),
+            ),
             ButtonSegment(
               value: FiltroStatusCliente.inativos,
               label: Text('Inativos'),
@@ -345,7 +335,10 @@ class _ClientesPageState extends State<ClientesPage> {
             children: [
               campoBusca,
               const SizedBox(height: 8),
-              SingleChildScrollView(scrollDirection: Axis.horizontal, child: filtro),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: filtro,
+              ),
             ],
           );
         }
@@ -389,7 +382,9 @@ class _ClientesPageState extends State<ClientesPage> {
                   final lista = filtrar(snapshot.data!);
 
                   if (lista.isEmpty) {
-                    return const Center(child: Text('Nenhum cliente encontrado'));
+                    return const Center(
+                      child: Text('Nenhum cliente encontrado'),
+                    );
                   }
 
                   return desktop ? tabela(lista) : listaMobile(lista);

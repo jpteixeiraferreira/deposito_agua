@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 
+import '../../../core/telefone_utils.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../relatorios/pdf/recibo_venda_pdf.dart';
 import '../../relatorios/repositories/config_recibo_repository.dart';
@@ -617,10 +618,7 @@ class _VendasPageState extends State<VendasPage> {
       );
 
       await Printing.sharePdf(
-        bytes: await ReciboVendaPdf.gerar(
-          vendaDetalhada,
-          config: configRecibo,
-        ),
+        bytes: await ReciboVendaPdf.gerar(vendaDetalhada, config: configRecibo),
         filename: 'recibo-venda-$vendaId.pdf',
       );
 
@@ -745,7 +743,9 @@ class _VendasPageState extends State<VendasPage> {
                     selected: selecionado,
                     selectedTileColor: Colors.blue.shade50,
                     title: Text(c.nome),
-                    subtitle: Text('${c.telefone} • ${c.endereco}'),
+                    subtitle: Text(
+                      '${formatarTelefone(c.telefone)} - ${c.endereco}',
+                    ),
                     onTap: () => selecionarCliente(c),
                   );
                 },
