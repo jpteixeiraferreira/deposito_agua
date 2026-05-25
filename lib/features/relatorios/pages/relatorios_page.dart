@@ -19,6 +19,7 @@ import '../repositories/config_recibo_repository.dart';
 import '../repositories/relatorio_repository.dart';
 
 enum TipoRelatorio { vendas, movimentacoes }
+
 enum TipoMovimentacaoFiltro { todas, entradas, saidas }
 
 class RelatoriosPage extends StatefulWidget {
@@ -49,8 +50,7 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
   bool relatorioDetalhado = false;
   bool usarPeriodo = true;
   TipoRelatorio tipoRelatorio = TipoRelatorio.vendas;
-  TipoMovimentacaoFiltro tipoMovimentacaoFiltro =
-      TipoMovimentacaoFiltro.todas;
+  TipoMovimentacaoFiltro tipoMovimentacaoFiltro = TipoMovimentacaoFiltro.todas;
   String? clienteFiltroId;
   String? produtoFiltroId;
 
@@ -125,7 +125,11 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     if (periodo == null) return;
 
     setState(() {
-      inicio = DateTime(periodo.start.year, periodo.start.month, periodo.start.day);
+      inicio = DateTime(
+        periodo.start.year,
+        periodo.start.month,
+        periodo.start.day,
+      );
       fim = DateTime(
         periodo.end.year,
         periodo.end.month,
@@ -158,7 +162,8 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     }
 
     await Printing.layoutPdf(
-      name: 'relatorio-vendas-${dataArquivo(inicio)}-${dataArquivo(fimExibicao)}.pdf',
+      name:
+          'relatorio-vendas-${dataArquivo(inicio)}-${dataArquivo(fimExibicao)}.pdf',
       onLayout: (_) => RelatorioVendasPdf.gerar(
         inicio: inicio,
         fim: fimExibicao,
@@ -270,12 +275,12 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     await carregar();
   }
 
-  Future<void> imprimirRecibo(String vendaId) async {
+  Future<void> compartilharRecibo(String vendaId) async {
     final venda = await vendaRepo.buscarVendaDetalhada(vendaId);
 
-    await Printing.layoutPdf(
-      name: 'recibo-venda-$vendaId.pdf',
-      onLayout: (_) => ReciboVendaPdf.gerar(venda, config: configRecibo),
+    await Printing.sharePdf(
+      bytes: await ReciboVendaPdf.gerar(venda, config: configRecibo),
+      filename: 'recibo-venda-$vendaId.pdf',
     );
   }
 
@@ -356,10 +361,30 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
   }
 
   double get totalVendido {
-    return vendas.where((v) => (v['status'] ?? 'finalizada') != 'cancelada').fold(
-      0,
-      (soma, venda) => soma + ((venda['total'] as num?)?.toDouble() ?? 0),
-    );
+    return vendas
+        .where((v) => (v['status'] ?? 'finalizada') != 'cancelada')
+        .fold(
+          0,
+          (soma, venda) => soma + ((venda['total'] as num?)?.toDouble() ?? 0),
+        );
+  }
+
+  double get totalDescontos {
+    return vendas
+        .where((v) => (v['status'] ?? 'finalizada') != 'cancelada')
+        .fold<double>(0.0, (soma, venda) {
+          final descontoVenda =
+              ((venda['desconto_total'] as num?)?.toDouble() ?? 0);
+          final itens = List<Map<String, dynamic>>.from(
+            venda['venda_itens'] ?? [],
+          );
+          final descontoItens = itens.fold<double>(
+            0,
+            (total, item) =>
+                total + ((item['desconto_total'] as num?)?.toDouble() ?? 0),
+          );
+          return soma + descontoVenda + descontoItens;
+        });
   }
 
   int get quantidadeVendasFinalizadas {
@@ -373,9 +398,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
     for (final item in produtosVendidos) {
       final produto = item['produtos'] as Map<String, dynamic>? ?? {};
       final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
-      final precoVenda = ((item['preco_unitario'] as num?)?.toDouble() ?? 0);
       final precoCusto = ((produto['preco_custo'] as num?)?.toDouble() ?? 0);
-      lucro += (precoVenda - precoCusto) * qtd;
+      final subtotal = ((item['subtotal'] as num?)?.toDouble() ?? 0);
+      lucro += subtotal - (precoCusto * qtd);
     }
     return lucro;
   }
@@ -562,6 +587,8 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
             : 'Sem cliente';
 
         final total = ((venda['total'] as num?)?.toDouble() ?? 0);
+        final descontoVenda =
+            ((venda['desconto_total'] as num?)?.toDouble() ?? 0);
 
         final data = DateTime.tryParse(venda['data_venda'].toString());
 
@@ -573,7 +600,11 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
           child: ListTile(
             leading: const Icon(Icons.receipt_long),
             title: Text(nomeCliente),
-            subtitle: Text('Horário: $hora'),
+            subtitle: Text(
+              descontoVenda > 0
+                  ? 'Horário: $hora - desconto ${moeda(descontoVenda)}'
+                  : 'Horário: $hora',
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -582,9 +613,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 IconButton(
-                  tooltip: 'Imprimir recibo',
-                  icon: const Icon(Icons.print),
-                  onPressed: () => imprimirRecibo(venda['id'].toString()),
+                  tooltip: 'Enviar PDF',
+                  icon: const Icon(Icons.share),
+                  onPressed: () => compartilharRecibo(venda['id'].toString()),
                 ),
               ],
             ),
@@ -732,7 +763,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                     await carregar();
                   },
                   icon: Icon(usarPeriodo ? Icons.event_busy : Icons.event),
-                  label: Text(usarPeriodo ? 'Todos os periodos' : 'Usar periodo'),
+                  label: Text(
+                    usarPeriodo ? 'Todos os periodos' : 'Usar periodo',
+                  ),
                 ),
                 ElevatedButton.icon(
                   onPressed: exportarPdf,
@@ -844,6 +877,14 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                   SizedBox(
                     width: 280,
                     child: cardResumo(
+                      titulo: 'Descontos',
+                      valor: moeda(totalDescontos),
+                      icon: Icons.percent,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 280,
+                    child: cardResumo(
                       titulo: 'Lucro estimado',
                       valor: moeda(lucroEstimado),
                       icon: Icons.trending_up,
@@ -888,8 +929,11 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
 
   Widget vendaDetalhadaCard(Map<String, dynamic> venda) {
     final cliente = venda['clientes'];
-    final nomeCliente = cliente != null ? cliente['nome'].toString() : 'Sem cliente';
+    final nomeCliente = cliente != null
+        ? cliente['nome'].toString()
+        : 'Sem cliente';
     final total = ((venda['total'] as num?)?.toDouble() ?? 0);
+    final descontoVenda = ((venda['desconto_total'] as num?)?.toDouble() ?? 0);
     final status = (venda['status'] ?? 'finalizada').toString();
     final cancelada = status == 'cancelada';
     final numero = venda['numero']?.toString() ?? venda['id'].toString();
@@ -921,7 +965,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                 ),
               ),
               subtitle: Text(
-                'Horario: $hora - ${cancelada ? 'Cancelada' : 'Finalizada'}',
+                descontoVenda > 0
+                    ? 'Horario: $hora - ${cancelada ? 'Cancelada' : 'Finalizada'} - desconto ${moeda(descontoVenda)}'
+                    : 'Horario: $hora - ${cancelada ? 'Cancelada' : 'Finalizada'}',
               ),
               trailing: Wrap(
                 spacing: 4,
@@ -936,9 +982,9 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Imprimir recibo',
-                    icon: const Icon(Icons.print),
-                    onPressed: () => imprimirRecibo(venda['id'].toString()),
+                    tooltip: 'Enviar PDF',
+                    icon: const Icon(Icons.share),
+                    onPressed: () => compartilharRecibo(venda['id'].toString()),
                   ),
                   if (!cancelada)
                     IconButton(
@@ -955,6 +1001,8 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
               final produto = item['produtos'] as Map<String, dynamic>? ?? {};
               final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
               final subtotal = ((item['subtotal'] as num?)?.toDouble() ?? 0);
+              final desconto =
+                  ((item['desconto_total'] as num?)?.toDouble() ?? 0);
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
@@ -966,6 +1014,14 @@ class _RelatoriosPageState extends State<RelatoriosPage> {
                       ),
                     ),
                     Text('${qtd.toStringAsFixed(0)} un.'),
+                    const SizedBox(width: 12),
+                    if (desconto > 0) ...[
+                      const SizedBox(width: 12),
+                      Text(
+                        '-${moeda(desconto)}',
+                        style: TextStyle(color: Colors.green.shade700),
+                      ),
+                    ],
                     const SizedBox(width: 12),
                     Text(moeda(subtotal)),
                   ],
@@ -1212,33 +1268,27 @@ class _ConfigReciboDialogState extends State<ConfigReciboDialog> {
   Future<void> visualizarRecibo() async {
     await Printing.layoutPdf(
       name: 'preview-recibo.pdf',
-      onLayout: (_) => ReciboVendaPdf.gerar(
-        {
-          'id': '000001',
-          'total': 40.0,
-          'data_venda': DateTime.now().toIso8601String(),
-          'clientes': {
-            'nome': 'Cliente de exemplo',
-            'endereco': 'Rua de exemplo, nº 123',
-            'cpf_cnpj': '000.000.000-00',
-          },
-          'venda_itens': [
-            {
-              'quantidade': 2,
-              'preco_unitario': 20.0,
-              'subtotal': 40.0,
-              'produtos': {
-                'codigo': '001',
-                'descricao': 'Produto de exemplo',
-              },
-            },
-          ],
-          'pagamentos': [
-            {'tipo': 'pix', 'valor': 40.0},
-          ],
+      onLayout: (_) => ReciboVendaPdf.gerar({
+        'id': '000001',
+        'total': 40.0,
+        'data_venda': DateTime.now().toIso8601String(),
+        'clientes': {
+          'nome': 'Cliente de exemplo',
+          'endereco': 'Rua de exemplo, nº 123',
+          'cpf_cnpj': '000.000.000-00',
         },
-        config: configAtual(),
-      ),
+        'venda_itens': [
+          {
+            'quantidade': 2,
+            'preco_unitario': 20.0,
+            'subtotal': 40.0,
+            'produtos': {'codigo': '001', 'descricao': 'Produto de exemplo'},
+          },
+        ],
+        'pagamentos': [
+          {'tipo': 'pix', 'valor': 40.0},
+        ],
+      }, config: configAtual()),
     );
   }
 

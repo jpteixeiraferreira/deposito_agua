@@ -23,6 +23,17 @@ class RelatorioVendasPdf {
       0,
       (soma, venda) => soma + ((venda['total'] as num?)?.toDouble() ?? 0),
     );
+    final descontos = vendasFinalizadas.fold<double>(0, (soma, venda) {
+      final descontoVenda =
+          ((venda['desconto_total'] as num?)?.toDouble() ?? 0);
+      final itens = List<Map<String, dynamic>>.from(venda['venda_itens'] ?? []);
+      final descontoItens = itens.fold<double>(
+        0,
+        (total, item) =>
+            total + ((item['desconto_total'] as num?)?.toDouble() ?? 0),
+      );
+      return soma + descontoVenda + descontoItens;
+    });
 
     doc.addPage(
       pw.MultiPage(
@@ -45,6 +56,8 @@ class RelatorioVendasPdf {
                 'Quantidade de vendas',
                 vendasFinalizadas.length.toString(),
               ),
+              pw.SizedBox(width: 12),
+              _cardResumo('Descontos', _moeda(descontos)),
             ],
           ),
           pw.SizedBox(height: 16),
@@ -144,24 +157,47 @@ class RelatorioVendasPdf {
         1: pw.FixedColumnWidth(55),
         2: pw.FlexColumnWidth(),
         3: pw.FlexColumnWidth(),
-        4: pw.FixedColumnWidth(80),
+        4: pw.FixedColumnWidth(70),
+        5: pw.FixedColumnWidth(80),
       },
       children: [
-        _linha(['Venda', 'Hora', 'Cliente', 'Itens', 'Total'], header: true),
+        _linha([
+          'Venda',
+          'Hora',
+          'Cliente',
+          'Itens',
+          'Desconto',
+          'Total',
+        ], header: true),
         ...vendas.map((venda) {
           final data = DateTime.tryParse(venda['data_venda'].toString());
           final cliente = venda['clientes'] as Map<String, dynamic>?;
           final total = ((venda['total'] as num?)?.toDouble() ?? 0);
+          final descontoVenda =
+              ((venda['desconto_total'] as num?)?.toDouble() ?? 0);
           final cancelada =
               (venda['status'] ?? 'finalizada').toString() == 'cancelada';
           final itens = List<Map<String, dynamic>>.from(
             venda['venda_itens'] ?? [],
           );
-          final itensTexto = itens.map((item) {
-            final produto = item['produtos'] as Map<String, dynamic>? ?? {};
-            final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
-            return '${qtd.toStringAsFixed(0)}x ${produto['descricao'] ?? 'Produto'}';
-          }).join('\n');
+          final itensTexto = itens
+              .map((item) {
+                final produto = item['produtos'] as Map<String, dynamic>? ?? {};
+                final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
+                final descontoItem =
+                    ((item['desconto_total'] as num?)?.toDouble() ?? 0);
+                final descontoTexto = descontoItem > 0
+                    ? ' (-${_moeda(descontoItem)})'
+                    : '';
+                return '${qtd.toStringAsFixed(0)}x ${produto['descricao'] ?? 'Produto'}$descontoTexto';
+              })
+              .join('\n');
+          final descontoItens = itens.fold<double>(
+            0,
+            (soma, item) =>
+                soma + ((item['desconto_total'] as num?)?.toDouble() ?? 0),
+          );
+          final descontoTotal = descontoVenda + descontoItens;
 
           return _linha([
             (venda['numero'] ?? venda['id'] ?? '').toString(),
@@ -170,6 +206,7 @@ class RelatorioVendasPdf {
                 : '${data.hour.toString().padLeft(2, '0')}:${data.minute.toString().padLeft(2, '0')}',
             cliente?['nome']?.toString() ?? 'Sem cliente',
             cancelada ? 'CANCELADA\n$itensTexto' : itensTexto,
+            cancelada ? '-' : _moeda(descontoTotal),
             cancelada ? 'CANCELADA' : _moeda(total),
           ]);
         }),
@@ -187,9 +224,7 @@ class RelatorioVendasPdf {
           padding: const pw.EdgeInsets.all(5),
           child: pw.Text(
             texto,
-            style: header
-                ? pw.TextStyle(fontWeight: pw.FontWeight.bold)
-                : null,
+            style: header ? pw.TextStyle(fontWeight: pw.FontWeight.bold) : null,
           ),
         );
       }).toList(),

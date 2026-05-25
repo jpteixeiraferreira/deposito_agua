@@ -27,6 +27,8 @@ class _VendasPageState extends State<VendasPage> {
   final clienteBuscaController = TextEditingController();
   final produtoBuscaController = TextEditingController();
   final qtdController = TextEditingController(text: '1');
+  final descontoItemController = TextEditingController();
+  final descontoVendaController = TextEditingController();
 
   final clienteFocus = FocusNode();
   final produtoFocus = FocusNode();
@@ -37,6 +39,8 @@ class _VendasPageState extends State<VendasPage> {
   final valorPagamentoController = TextEditingController();
 
   String tipoPagamento = 'dinheiro';
+  String descontoItemTipo = 'valor';
+  String descontoVendaTipo = 'valor';
 
   final List<Map<String, dynamic>> pagamentos = [];
 
@@ -68,6 +72,8 @@ class _VendasPageState extends State<VendasPage> {
     clienteBuscaController.dispose();
     produtoBuscaController.dispose();
     qtdController.dispose();
+    descontoItemController.dispose();
+    descontoVendaController.dispose();
 
     clienteFocus.dispose();
     produtoFocus.dispose();
@@ -124,7 +130,55 @@ class _VendasPageState extends State<VendasPage> {
   }
 
   double get total {
-    return itens.fold(0, (soma, item) => soma + (item['subtotal'] as double));
+    final total = subtotalItens - descontoVendaTotal;
+    return total < 0 ? 0 : total;
+  }
+
+  double get subtotalItens {
+    return itens.fold<double>(
+      0,
+      (soma, item) => soma + ((item['subtotal'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  double get descontoItensTotal {
+    return itens.fold<double>(
+      0,
+      (soma, item) =>
+          soma + ((item['desconto_total'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  double get descontoVendaValorInformado {
+    return parseMoeda(descontoVendaController.text);
+  }
+
+  double get descontoVendaTotal {
+    return calcularDesconto(
+      base: subtotalItens,
+      tipo: descontoVendaTipo,
+      valor: descontoVendaValorInformado,
+    );
+  }
+
+  double calcularDesconto({
+    required double base,
+    required String tipo,
+    required double valor,
+  }) {
+    if (base <= 0 || valor <= 0) return 0;
+    if (tipo == 'percentual') return base * (valor / 100);
+    return valor;
+  }
+
+  bool descontoValido({
+    required double base,
+    required String tipo,
+    required double valor,
+  }) {
+    if (valor < 0) return false;
+    if (tipo == 'percentual' && valor > 100) return false;
+    return calcularDesconto(base: base, tipo: tipo, valor: valor) <= base;
   }
 
   List<Cliente> filtrarClientes(String busca) {
@@ -223,6 +277,13 @@ class _VendasPageState extends State<VendasPage> {
     }
 
     final p = produtoSelecionado!;
+    final valorBruto = qtd * p.precoVenda;
+    final descontoValor = parseMoeda(descontoItemController.text);
+    final descontoTotal = calcularDesconto(
+      base: valorBruto,
+      tipo: descontoItemTipo,
+      valor: descontoValor,
+    );
 
     if (p.precoVenda <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -234,7 +295,26 @@ class _VendasPageState extends State<VendasPage> {
       return;
     }
 
-    final index = itens.indexWhere((i) => i['produto_id'] == p.id);
+    if (!descontoValido(
+      base: valorBruto,
+      tipo: descontoItemTipo,
+      valor: descontoValor,
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('O desconto do item nao pode ser maior que o item'),
+        ),
+      );
+      return;
+    }
+
+    final index = descontoTotal == 0
+        ? itens.indexWhere(
+            (i) =>
+                i['produto_id'] == p.id &&
+                (((i['desconto_total'] as num?)?.toDouble() ?? 0) == 0),
+          )
+        : -1;
 
     final qtdAtual = index >= 0
         ? (itens[index]['quantidade'] as num).toDouble()
@@ -257,13 +337,18 @@ class _VendasPageState extends State<VendasPage> {
       if (index >= 0) {
         itens[index]['quantidade'] = novaQtd;
         itens[index]['subtotal'] = novaQtd * p.precoVenda;
+        itens[index]['valor_bruto'] = novaQtd * p.precoVenda;
       } else {
         itens.add({
           'produto_id': p.id,
           'descricao': p.descricao,
           'quantidade': qtd,
           'preco': p.precoVenda,
-          'subtotal': qtd * p.precoVenda,
+          'valor_bruto': valorBruto,
+          'desconto_tipo': descontoTotal > 0 ? descontoItemTipo : 'valor',
+          'desconto_valor': descontoTotal > 0 ? descontoValor : 0.0,
+          'desconto_total': descontoTotal,
+          'subtotal': valorBruto - descontoTotal,
           'estoque': p.estoqueAtual,
         });
       }
@@ -271,11 +356,79 @@ class _VendasPageState extends State<VendasPage> {
       produtoSelecionado = null;
       produtoBuscaController.clear();
       qtdController.text = '1';
+      descontoItemController.clear();
+      descontoItemTipo = 'valor';
       produtoIndexSelecionado = 0;
       mostrarTodosProdutos = false;
     });
 
     produtoFocus.requestFocus();
+  }
+
+  Future<void> configurarDescontoItem() async {
+    final resultado = await showDialog<DescontoInput>(
+      context: context,
+      builder: (_) => DescontoDialog(
+        titulo: 'Desconto no item',
+        tipoInicial: descontoItemTipo,
+        valorInicial: descontoItemController.text,
+      ),
+    );
+
+    if (resultado == null) return;
+
+    setState(() {
+      descontoItemTipo = resultado.tipo;
+      descontoItemController.text = resultado.valor;
+    });
+  }
+
+  Future<void> configurarDescontoVenda() async {
+    final resultado = await showDialog<DescontoInput>(
+      context: context,
+      builder: (_) => DescontoDialog(
+        titulo: 'Desconto na venda',
+        tipoInicial: descontoVendaTipo,
+        valorInicial: descontoVendaController.text,
+      ),
+    );
+
+    if (resultado == null) return;
+
+    final valor = parseMoeda(resultado.valor);
+    if (!descontoValido(
+      base: subtotalItens,
+      tipo: resultado.tipo,
+      valor: valor,
+    )) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('O desconto nao pode ser maior que o total da venda'),
+        ),
+      );
+      return;
+    }
+    final novoDesconto = calcularDesconto(
+      base: subtotalItens,
+      tipo: resultado.tipo,
+      valor: valor,
+    );
+    final novoTotalCentavos = paraCentavos(subtotalItens - novoDesconto);
+    if (totalSemDinheiroCentavos > novoTotalCentavos) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pix/cartao nao pode ultrapassar o total com desconto'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      descontoVendaTipo = resultado.tipo;
+      descontoVendaController.text = resultado.valor;
+    });
   }
 
   int get totalCentavos {
@@ -383,6 +536,18 @@ class _VendasPageState extends State<VendasPage> {
       produtoFocus.requestFocus();
       return;
     }
+    if (!descontoValido(
+      base: subtotalItens,
+      tipo: descontoVendaTipo,
+      valor: descontoVendaValorInformado,
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('O desconto nao pode ser maior que o total da venda'),
+        ),
+      );
+      return;
+    }
     if (pagamentos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Adicione pelo menos um pagamento')),
@@ -396,11 +561,23 @@ class _VendasPageState extends State<VendasPage> {
       );
       return;
     }
+    if (totalSemDinheiroCentavos > totalCentavos) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pix/cartao nao pode ultrapassar o total da venda'),
+        ),
+      );
+      return;
+    }
     try {
       setState(() => salvando = true);
 
       final vendaId = await vendaRepo.criarVenda(
         clienteId: clienteSelecionado!.id,
+        subtotal: subtotalItens,
+        descontoTipo: descontoVendaTotal > 0 ? descontoVendaTipo : 'valor',
+        descontoValor: descontoVendaTotal > 0 ? descontoVendaValorInformado : 0,
+        descontoTotal: descontoVendaTotal,
         total: total,
       );
 
@@ -410,6 +587,10 @@ class _VendasPageState extends State<VendasPage> {
           produtoId: item['produto_id'],
           quantidade: (item['quantidade'] as num).toDouble(),
           preco: (item['preco'] as num).toDouble(),
+          descontoTipo: item['desconto_tipo'].toString(),
+          descontoValor: (item['desconto_valor'] as num).toDouble(),
+          descontoTotal: (item['desconto_total'] as num).toDouble(),
+          subtotal: (item['subtotal'] as num).toDouble(),
         );
 
         await vendaRepo.baixarEstoque(
@@ -435,12 +616,12 @@ class _VendasPageState extends State<VendasPage> {
         const SnackBar(content: Text('Venda realizada com sucesso')),
       );
 
-      await Printing.layoutPdf(
-        name: 'recibo-venda-$vendaId.pdf',
-        onLayout: (_) => ReciboVendaPdf.gerar(
+      await Printing.sharePdf(
+        bytes: await ReciboVendaPdf.gerar(
           vendaDetalhada,
           config: configRecibo,
         ),
+        filename: 'recibo-venda-$vendaId.pdf',
       );
 
       if (!mounted) return;
@@ -453,6 +634,10 @@ class _VendasPageState extends State<VendasPage> {
         produtoBuscaController.clear();
 
         qtdController.text = '1';
+        descontoItemController.clear();
+        descontoItemTipo = 'valor';
+        descontoVendaController.clear();
+        descontoVendaTipo = 'valor';
         pagamentos.clear();
         valorPagamentoController.clear();
         tipoPagamento = 'dinheiro';
@@ -708,6 +893,7 @@ class _VendasPageState extends State<VendasPage> {
         final item = entry.value;
 
         final subtotal = moeda((item['subtotal'] as num).toDouble());
+        final desconto = ((item['desconto_total'] as num?)?.toDouble() ?? 0);
         final detalhe =
             '${item['quantidade']} x ${moeda((item['preco'] as num).toDouble())}';
 
@@ -735,6 +921,13 @@ class _VendasPageState extends State<VendasPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(detalhe),
+                    if (desconto > 0) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Desconto: ${moeda(desconto)}',
+                        style: TextStyle(color: Colors.green.shade700),
+                      ),
+                    ],
                   ],
                 );
 
@@ -1004,6 +1197,57 @@ class _VendasPageState extends State<VendasPage> {
     );
   }
 
+  Widget areaDescontoVenda() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Desconto da venda',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: itens.isEmpty ? null : configurarDescontoVenda,
+                  icon: const Icon(Icons.percent),
+                  label: const Text('Aplicar desconto'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [const Text('Subtotal:'), Text(moeda(subtotalItens))],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Desconto nos itens:'),
+                Text(moeda(descontoItensTotal)),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Desconto da venda:'),
+                Text(
+                  moeda(descontoVendaTotal),
+                  style: TextStyle(color: Colors.green.shade700),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (loading) {
@@ -1024,66 +1268,35 @@ class _VendasPageState extends State<VendasPage> {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
-                children: [
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: OutlinedButton.icon(
-                      onPressed: consultarVenda,
-                      icon: const Icon(Icons.manage_search),
-                      label: const Text('Consultar venda'),
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: consultarVenda,
+                        icon: const Icon(Icons.manage_search),
+                        label: const Text('Consultar venda'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: LayoutBuilder(
-                        builder: (context, c) {
-                          final telaEstreita = c.maxWidth < 700;
+                    const SizedBox(height: 12),
+                    Card(
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: LayoutBuilder(
+                          builder: (context, c) {
+                            final telaEstreita = c.maxWidth < 700;
 
-                          return Column(
-                            children: [
-                              campoCliente(),
-                              const SizedBox(height: 12),
+                            return Column(
+                              children: [
+                                campoCliente(),
+                                const SizedBox(height: 12),
 
-                              if (telaEstreita)
-                                Column(
-                                  children: [
-                                    campoProduto(),
-                                    const SizedBox(height: 10),
-                                    TextField(
-                                      controller: qtdController,
-                                      focusNode: qtdFocus,
-                                      keyboardType: TextInputType.number,
-                                      textInputAction: TextInputAction.done,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Qtd',
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      onSubmitted: (_) => adicionarItem(),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 56,
-                                      child: ElevatedButton.icon(
-                                        onPressed: adicionarItem,
-                                        icon: const Icon(Icons.add),
-                                        label: const Text('Adicionar'),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              else
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(child: campoProduto()),
-                                    const SizedBox(width: 10),
-                                    SizedBox(
-                                      width: 100,
-                                      child: TextField(
+                                if (telaEstreita)
+                                  Column(
+                                    children: [
+                                      campoProduto(),
+                                      const SizedBox(height: 10),
+                                      TextField(
                                         controller: qtdController,
                                         focusNode: qtdFocus,
                                         keyboardType: TextInputType.number,
@@ -1094,84 +1307,239 @@ class _VendasPageState extends State<VendasPage> {
                                         ),
                                         onSubmitted: (_) => adicionarItem(),
                                       ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    SizedBox(
-                                      height: 56,
-                                      child: ElevatedButton.icon(
-                                        onPressed: adicionarItem,
-                                        icon: const Icon(Icons.add),
-                                        label: const Text('Adicionar'),
+                                      const SizedBox(height: 10),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        height: 56,
+                                        child: Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 56,
+                                              height: 56,
+                                              child: OutlinedButton(
+                                                onPressed:
+                                                    configurarDescontoItem,
+                                                child: const Icon(
+                                                  Icons.percent,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: ElevatedButton.icon(
+                                                onPressed: adicionarItem,
+                                                icon: const Icon(Icons.add),
+                                                label: const Text('Adicionar'),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                            ],
-                          );
-                        },
+                                    ],
+                                  )
+                                else
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(child: campoProduto()),
+                                      const SizedBox(width: 10),
+                                      SizedBox(
+                                        width: 100,
+                                        child: TextField(
+                                          controller: qtdController,
+                                          focusNode: qtdFocus,
+                                          keyboardType: TextInputType.number,
+                                          textInputAction: TextInputAction.done,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Qtd',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          onSubmitted: (_) => adicionarItem(),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      SizedBox(
+                                        width: 56,
+                                        height: 56,
+                                        child: OutlinedButton(
+                                          onPressed: configurarDescontoItem,
+                                          child: const Icon(Icons.percent),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      SizedBox(
+                                        height: 56,
+                                        child: ElevatedButton.icon(
+                                          onPressed: adicionarItem,
+                                          icon: const Icon(Icons.add),
+                                          label: const Text('Adicionar'),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                  listaItens(),
-                  const SizedBox(height: 12),
-                  areaPagamentos(),
+                    listaItens(),
+                    const SizedBox(height: 12),
+                    areaDescontoVenda(),
+                    const SizedBox(height: 12),
+                    areaPagamentos(),
 
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                  Card(
-                    color: Colors.blue.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'TOTAL',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Flexible(
-                            child: Text(
-                              moeda(total),
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                fontSize: 26,
+                    Card(
+                      color: Colors.blue.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'TOTAL',
+                              style: TextStyle(
+                                fontSize: 18,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                        ],
+                            Flexible(
+                              child: Text(
+                                moeda(total),
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      onPressed: salvando ? null : finalizarVenda,
-                      child: salvando
-                          ? const CircularProgressIndicator()
-                          : const Text(
-                              'FINALIZAR VENDA',
-                              style: TextStyle(fontSize: 18),
-                            ),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 55,
+                      child: ElevatedButton(
+                        onPressed: salvando ? null : finalizarVenda,
+                        child: salvando
+                            ? const CircularProgressIndicator()
+                            : const Text(
+                                'FINALIZAR VENDA',
+                                style: TextStyle(fontSize: 18),
+                              ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
                 ),
               ),
             );
           },
         ),
       ),
+    );
+  }
+}
+
+class DescontoInput {
+  final String tipo;
+  final String valor;
+
+  const DescontoInput({required this.tipo, required this.valor});
+}
+
+class DescontoDialog extends StatefulWidget {
+  final String titulo;
+  final String tipoInicial;
+  final String valorInicial;
+
+  const DescontoDialog({
+    super.key,
+    required this.titulo,
+    required this.tipoInicial,
+    required this.valorInicial,
+  });
+
+  @override
+  State<DescontoDialog> createState() => _DescontoDialogState();
+}
+
+class _DescontoDialogState extends State<DescontoDialog> {
+  late String tipo;
+  late final TextEditingController valorController;
+
+  @override
+  void initState() {
+    super.initState();
+    tipo = widget.tipoInicial;
+    valorController = TextEditingController(text: widget.valorInicial);
+  }
+
+  @override
+  void dispose() {
+    valorController.dispose();
+    super.dispose();
+  }
+
+  void aplicar() {
+    Navigator.pop(
+      context,
+      DescontoInput(tipo: tipo, valor: valorController.text.trim()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.titulo),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'valor', label: Text('R\$')),
+                ButtonSegment(value: 'percentual', label: Text('%')),
+              ],
+              selected: {tipo},
+              showSelectedIcon: false,
+              onSelectionChanged: (value) {
+                setState(() {
+                  tipo = value.first;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: valorController,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: tipo == 'percentual' ? 'Percentual' : 'Valor',
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => aplicar(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(onPressed: aplicar, child: const Text('Aplicar')),
+      ],
     );
   }
 }
@@ -1234,16 +1602,16 @@ class _ConsultaVendaDialogState extends State<ConsultaVendaDialog> {
       });
 
       if (encontrada == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Venda nao encontrada')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Venda nao encontrada')));
       }
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
-  Future<void> imprimir() async {
+  Future<void> compartilharRecibo() async {
     final vendaAtual = venda;
     if (vendaAtual == null) return;
 
@@ -1252,9 +1620,9 @@ class _ConsultaVendaDialogState extends State<ConsultaVendaDialog> {
     );
     final config = await configReciboRepo.buscar();
 
-    await Printing.layoutPdf(
-      name: 'recibo-venda-${detalhada['numero'] ?? detalhada['id']}.pdf',
-      onLayout: (_) => ReciboVendaPdf.gerar(detalhada, config: config),
+    await Printing.sharePdf(
+      bytes: await ReciboVendaPdf.gerar(detalhada, config: config),
+      filename: 'recibo-venda-${detalhada['numero'] ?? detalhada['id']}.pdf',
     );
   }
 
@@ -1405,9 +1773,9 @@ class _ConsultaVendaDialogState extends State<ConsultaVendaDialog> {
         ),
         if (vendaAtual != null)
           OutlinedButton.icon(
-            onPressed: loading ? null : imprimir,
-            icon: const Icon(Icons.print),
-            label: const Text('Reimprimir'),
+            onPressed: loading ? null : compartilharRecibo,
+            icon: const Icon(Icons.share),
+            label: const Text('Enviar PDF'),
           ),
         if (vendaAtual != null && !cancelada)
           ElevatedButton.icon(

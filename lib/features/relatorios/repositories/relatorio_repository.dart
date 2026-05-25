@@ -20,7 +20,9 @@ class RelatorioRepository {
     String coluna = 'data_venda',
   }) {
     var filtrada = query;
-    if (inicio != null) filtrada = filtrada.gte(coluna, inicio.toIso8601String());
+    if (inicio != null) {
+      filtrada = filtrada.gte(coluna, inicio.toIso8601String());
+    }
     if (fim != null) filtrada = filtrada.lt(coluna, fim.toIso8601String());
     return filtrada;
   }
@@ -38,6 +40,10 @@ class RelatorioRepository {
           id,
           numero,
           status,
+          subtotal,
+          desconto_tipo,
+          desconto_valor,
+          desconto_total,
           total,
           data_venda,
           clientes:cliente_id (
@@ -46,6 +52,9 @@ class RelatorioRepository {
           venda_itens (
             quantidade,
             preco_unitario,
+            desconto_tipo,
+            desconto_valor,
+            desconto_total,
             subtotal,
             produtos:produto_id (
               id,
@@ -59,6 +68,10 @@ class RelatorioRepository {
           id,
           numero,
           status,
+          subtotal,
+          desconto_tipo,
+          desconto_valor,
+          desconto_total,
           total,
           data_venda,
           clientes:cliente_id (
@@ -67,6 +80,9 @@ class RelatorioRepository {
           venda_itens!inner (
             quantidade,
             preco_unitario,
+            desconto_tipo,
+            desconto_valor,
+            desconto_total,
             subtotal,
             produtos:produto_id (
               id,
@@ -82,7 +98,9 @@ class RelatorioRepository {
     query = _filtroPeriodo(query, inicio: inicio, fim: fim);
 
     if (clienteId != null) query = query.eq('cliente_id', clienteId);
-    if (produtoId != null) query = query.eq('venda_itens.produto_id', produtoId);
+    if (produtoId != null) {
+      query = query.eq('venda_itens.produto_id', produtoId);
+    }
     if (!incluirCanceladas) query = query.neq('status', 'cancelada');
 
     final response = await query.order('data_venda', ascending: false);

@@ -47,6 +47,10 @@ class VendaRepository {
 
   Future<String> criarVenda({
     required String clienteId,
+    required double subtotal,
+    required String descontoTipo,
+    required double descontoValor,
+    required double descontoTotal,
     required double total,
   }) async {
     final empresaId = await EmpresaContext.instance.empresaId();
@@ -56,6 +60,10 @@ class VendaRepository {
           'empresa_id': empresaId,
           'cliente_id': clienteId,
           'numero': await gerarProximoNumero(),
+          'subtotal': subtotal,
+          'desconto_tipo': descontoTipo,
+          'desconto_valor': descontoValor,
+          'desconto_total': descontoTotal,
           'total': total,
           'data_venda': DateTime.now().toIso8601String(),
           'status': 'finalizada',
@@ -74,6 +82,10 @@ class VendaRepository {
           id,
           numero,
           status,
+          subtotal,
+          desconto_tipo,
+          desconto_valor,
+          desconto_total,
           total,
           data_venda,
           cancelada_em,
@@ -89,6 +101,9 @@ class VendaRepository {
             produto_id,
             quantidade,
             preco_unitario,
+            desconto_tipo,
+            desconto_valor,
+            desconto_total,
             subtotal,
             produtos:produto_id (
               id,
@@ -118,6 +133,10 @@ class VendaRepository {
           id,
           numero,
           status,
+          subtotal,
+          desconto_tipo,
+          desconto_valor,
+          desconto_total,
           total,
           data_venda,
           clientes:cliente_id (
@@ -137,6 +156,10 @@ class VendaRepository {
     required String produtoId,
     required double quantidade,
     required double preco,
+    required String descontoTipo,
+    required double descontoValor,
+    required double descontoTotal,
+    required double subtotal,
   }) async {
     final empresaId = await EmpresaContext.instance.empresaId();
     await supabase.from('venda_itens').insert({
@@ -145,7 +168,10 @@ class VendaRepository {
       'produto_id': produtoId,
       'quantidade': quantidade,
       'preco_unitario': preco,
-      'subtotal': quantidade * preco,
+      'desconto_tipo': descontoTipo,
+      'desconto_valor': descontoValor,
+      'desconto_total': descontoTotal,
+      'subtotal': subtotal,
     });
   }
 

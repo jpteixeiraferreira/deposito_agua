@@ -23,6 +23,13 @@ class ReciboVendaPdf {
       venda['pagamentos'] ?? [],
     );
     final total = ((venda['total'] as num?)?.toDouble() ?? 0);
+    final subtotal = ((venda['subtotal'] as num?)?.toDouble() ?? total);
+    final descontoVenda = ((venda['desconto_total'] as num?)?.toDouble() ?? 0);
+    final descontoItens = itens.fold<double>(
+      0,
+      (soma, item) =>
+          soma + ((item['desconto_total'] as num?)?.toDouble() ?? 0),
+    );
 
     doc.addPage(
       pw.Page(
@@ -36,7 +43,11 @@ class ReciboVendaPdf {
               _cabecalho(venda, data, configRecibo, logo),
               _cliente(cliente, pagamentos),
               _itens(itens),
-              _total(total),
+              _total(
+                total: total,
+                subtotal: subtotal,
+                descontoTotal: descontoVenda + descontoItens,
+              ),
               pw.Spacer(),
               pw.Divider(),
               pw.Center(
@@ -102,11 +113,17 @@ class ReciboVendaPdf {
                           textAlign: pw.TextAlign.center,
                         ),
                         pw.SizedBox(height: 8),
-                        pw.Text(config.endereco, textAlign: pw.TextAlign.center),
+                        pw.Text(
+                          config.endereco,
+                          textAlign: pw.TextAlign.center,
+                        ),
                         pw.Text(config.cidade, textAlign: pw.TextAlign.center),
                         pw.SizedBox(height: 16),
                         pw.Text(config.email, textAlign: pw.TextAlign.center),
-                        pw.Text(config.telefone, textAlign: pw.TextAlign.center),
+                        pw.Text(
+                          config.telefone,
+                          textAlign: pw.TextAlign.center,
+                        ),
                       ],
                     ),
                   ),
@@ -186,13 +203,17 @@ class ReciboVendaPdf {
             ],
           ),
           _linhaInfo('ENDEREÇO', cliente['endereco']),
+          _linhaInfo('REFERENCIA', cliente['referencia']),
           pw.Row(
             children: [
               pw.Expanded(
                 child: _linhaInfo('FORMA PGTO', _formasPagamento(pagamentos)),
               ),
               pw.SizedBox(width: 12),
-              pw.SizedBox(width: 300, child: _linhaInfo('CONDIÇÃO PGTO', 'À VISTA')),
+              pw.SizedBox(
+                width: 300,
+                child: _linhaInfo('CONDIÇÃO PGTO', 'À VISTA'),
+              ),
             ],
           ),
         ],
@@ -224,6 +245,7 @@ class ReciboVendaPdf {
           _celulaCabecalho('UNIDADE'),
           _celulaCabecalho('QTD'),
           _celulaCabecalho('VALOR UNIT.'),
+          _celulaCabecalho('DESC.'),
           _celulaCabecalho('SUB TOTAL'),
         ],
       ),
@@ -233,6 +255,7 @@ class ReciboVendaPdf {
       final produto = item['produtos'] as Map<String, dynamic>? ?? {};
       final qtd = ((item['quantidade'] as num?)?.toDouble() ?? 0);
       final preco = ((item['preco_unitario'] as num?)?.toDouble() ?? 0);
+      final desconto = ((item['desconto_total'] as num?)?.toDouble() ?? 0);
       final subtotal = ((item['subtotal'] as num?)?.toDouble() ?? 0);
 
       linhas.add(
@@ -243,6 +266,7 @@ class ReciboVendaPdf {
             _celula('UN'),
             _celula(qtd.toStringAsFixed(0)),
             _celula(_moeda(preco)),
+            _celula(desconto > 0 ? _moeda(desconto) : '-'),
             _celula(_moeda(subtotal)),
           ],
         ),
@@ -252,7 +276,7 @@ class ReciboVendaPdf {
     while (linhas.length < 12) {
       linhas.add(
         pw.TableRow(
-          children: List.generate(6, (_) => _celula(' ', minHeight: 24)),
+          children: List.generate(7, (_) => _celula(' ', minHeight: 24)),
         ),
       );
     }
@@ -264,14 +288,19 @@ class ReciboVendaPdf {
         1: pw.FlexColumnWidth(),
         2: pw.FixedColumnWidth(58),
         3: pw.FixedColumnWidth(42),
-        4: pw.FixedColumnWidth(90),
-        5: pw.FixedColumnWidth(100),
+        4: pw.FixedColumnWidth(78),
+        5: pw.FixedColumnWidth(70),
+        6: pw.FixedColumnWidth(92),
       },
       children: linhas,
     );
   }
 
-  static pw.Widget _total(double total) {
+  static pw.Widget _total({
+    required double total,
+    required double subtotal,
+    required double descontoTotal,
+  }) {
     return pw.Container(
       decoration: const pw.BoxDecoration(
         border: pw.Border(
@@ -284,6 +313,10 @@ class ReciboVendaPdf {
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.end,
         children: [
+          if (descontoTotal > 0) ...[
+            pw.Text('SUBTOTAL: R\$ ${_moeda(subtotal)}  '),
+            pw.Text('DESCONTO: R\$ ${_moeda(descontoTotal)}  '),
+          ],
           pw.Text(
             'VALOR TOTAL DA NOTA:  ',
             style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
